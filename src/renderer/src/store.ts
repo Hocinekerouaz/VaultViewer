@@ -82,6 +82,9 @@ interface StoreState {
   createFolderAt: (parentRel: string, name: string) => Promise<string | null>
   renameItem: (relPath: string, newName: string) => Promise<string | null>
   deleteItem: (relPath: string) => Promise<boolean>
+  newNote: (parentRel: string, name: string) => Promise<string | null>
+  duplicateNote: (relPath: string) => Promise<string | null>
+  moveItem: (relPath: string, destFolder: string) => Promise<boolean>
   init: () => Promise<void>
   openVaultPath: (path: string) => Promise<void>
   openFolder: () => Promise<void>
@@ -182,6 +185,30 @@ export const useStore = create<StoreState>((set, get) => {
     if (next === current) return
     set({ searchHistory: next })
     saveSearchHistory(next)
+  }
+
+  const applyPathShift = async (relPath: string, newPath: string): Promise<void> => {
+    const shift = (value: string | null): string | null => {
+      if (value === relPath) return newPath
+      if (value && value.startsWith(`${relPath}/`)) return newPath + value.slice(relPath.length)
+      return value
+    }
+    const { tree, folders, openPath, selectedPath, collapsed, pinned, root } = get()
+    const nextPinned = pinned.map((item) => shift(item) ?? item)
+    set({
+      tree: tree.map((path) => shift(path) ?? path),
+      folders: folders.map((path) => shift(path) ?? path),
+      collapsed: remapCollapsed(collapsed, relPath, newPath),
+      pinned: nextPinned,
+      selectedPath: shift(selectedPath)
+    })
+    if (root && nextPinned.some((item, index) => item !== pinned[index])) savePins(root, nextPinned)
+    const nextOpen = shift(openPath)
+    if (nextOpen && nextOpen !== openPath) {
+      const current = get().note
+      set({ openPath: nextOpen, note: current ? { ...current, path: nextOpen } : null })
+      await get().refreshNoteMeta()
+    }
   }
 
   const applyVault = async (result: OpenVaultResult): Promise<void> => {
@@ -323,29 +350,43 @@ export const useStore = create<StoreState>((set, get) => {
         return null
       }
       const newPath = res.path ?? relPath
-      if (newPath === relPath) return newPath
-      const shift = (value: string | null): string | null => {
-        if (value === relPath) return newPath
-        if (value && value.startsWith(`${relPath}/`)) return newPath + value.slice(relPath.length)
-        return value
-      }
-      const { tree, folders, openPath, selectedPath, collapsed, pinned, root } = get()
-      const nextPinned = pinned.map((item) => shift(item) ?? item)
-      set({
-        tree: tree.map((path) => shift(path) ?? path),
-        folders: folders.map((path) => shift(path) ?? path),
-        collapsed: remapCollapsed(collapsed, relPath, newPath),
-        pinned: nextPinned,
-        selectedPath: shift(selectedPath)
-      })
-      if (root && nextPinned.some((item, index) => item !== pinned[index])) savePins(root, nextPinned)
-      const nextOpen = shift(openPath)
-      if (nextOpen && nextOpen !== openPath) {
-        const current = get().note
-        set({ openPath: nextOpen, note: current ? { ...current, path: nextOpen } : null })
-        await get().refreshNoteMeta()
-      }
+      if (newPath !== relPath) await applyPathShift(relPath, newPath)
       return newPath
+    },
+    newNote: async (parentRel, name) => {
+      const res = await window.api.createNote(parentRel, name)
+      if (!res.ok) {
+        if (res.error) get().showToast(res.error)
+        return null
+      }
+      const path = res.path ?? (parentRel ? `${parentRel}/${name}.md` : `${name}.md`)
+      if (!get().tree.includes(path)) set({ tree: [...get().tree, path] })
+      get().revealPath(path)
+      await get().openNote(path)
+      return path
+    },
+    duplicateNote: async (relPath) => {
+      const res = await window.api.duplicatePath(relPath)
+      if (!res.ok) {
+        if (res.error) get().showToast(res.error)
+        return null
+      }
+      const path = res.path
+      if (!path) return null
+      if (!get().tree.includes(path)) set({ tree: [...get().tree, path] })
+      get().revealPath(path)
+      await get().openNote(path)
+      return path
+    },
+    moveItem: async (relPath, destFolder) => {
+      const res = await window.api.movePath(relPath, destFolder)
+      if (!res.ok) {
+        if (res.error) get().showToast(res.error)
+        return false
+      }
+      const newPath = res.path ?? relPath
+      if (newPath !== relPath) await applyPathShift(relPath, newPath)
+      return true
     },
     deleteItem: async (relPath) => {
       const res = await window.api.deletePath(relPath)

@@ -34,6 +34,12 @@ const api = {
   renamePath: (relPath: string, newName: string): Promise<OpResult> =>
     ipcRenderer.invoke('op:rename', relPath, newName),
   deletePath: (relPath: string): Promise<OpResult> => ipcRenderer.invoke('op:delete', relPath),
+  createNote: (parentRel: string, name: string): Promise<OpResult> =>
+    ipcRenderer.invoke('op:newNote', parentRel, name),
+  duplicatePath: (relPath: string): Promise<OpResult> =>
+    ipcRenderer.invoke('op:duplicate', relPath),
+  movePath: (relPath: string, destFolder: string): Promise<OpResult> =>
+    ipcRenderer.invoke('op:move', relPath, destFolder),
   getVaultState: (): Promise<VaultState> => ipcRenderer.invoke('vault:state'),
   readFile: (relPath: string): Promise<FileView | null> =>
     ipcRenderer.invoke('file:read', relPath),

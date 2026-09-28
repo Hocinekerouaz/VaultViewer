@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createFolder, isValidName, renamePath, writeNote } from '../ops'
+import { createFolder, createNote, duplicateNote, isValidName, movePath, renamePath, writeNote } from '../ops'
 
 let dir: string
 
@@ -159,5 +159,88 @@ describe('writeNote', () => {
     const result = await writeNote(dir, 'ghost/file.md', 'x')
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/no longer exists/)
+  })
+})
+
+describe('createNote', () => {
+  it('creates a note at the vault root with a heading', async () => {
+    const result = await createNote(dir, '', 'Fresh')
+    expect(result).toEqual({ ok: true, path: 'Fresh.md' })
+    expect(await readFile(join(dir, 'Fresh.md'), 'utf8')).toBe('# Fresh\n')
+  })
+
+  it('creates a note inside a folder and strips a trailing .md', async () => {
+    const result = await createNote(dir, 'work', 'Plan.md')
+    expect(result).toEqual({ ok: true, path: 'work/Plan.md' })
+    expect(await exists('work/Plan.md')).toBe(true)
+  })
+
+  it('rejects duplicates and invalid names', async () => {
+    expect((await createNote(dir, '', 'Fresh')).ok).toBe(false)
+    expect((await createNote(dir, '', 'bad/name')).ok).toBe(false)
+    expect((await createNote(dir, '', '.hidden')).ok).toBe(false)
+  })
+
+  it('fails when the parent is missing or is a file', async () => {
+    expect((await createNote(dir, 'ghost', 'x')).ok).toBe(false)
+    expect((await createNote(dir, 'note.md', 'x')).ok).toBe(false)
+  })
+})
+
+describe('duplicateNote', () => {
+  it('copies a file next to itself with a copy suffix', async () => {
+    const result = await duplicateNote(dir, 'Fresh.md')
+    expect(result).toEqual({ ok: true, path: 'Fresh copy.md' })
+    expect(await readFile(join(dir, 'Fresh copy.md'), 'utf8')).toBe('# Fresh\n')
+    expect(await exists('Fresh.md')).toBe(true)
+  })
+
+  it('numbers further copies', async () => {
+    const result = await duplicateNote(dir, 'Fresh.md')
+    expect(result).toEqual({ ok: true, path: 'Fresh copy 2.md' })
+  })
+
+  it('duplicates inside a folder', async () => {
+    const result = await duplicateNote(dir, 'work/Plan.md')
+    expect(result).toEqual({ ok: true, path: 'work/Plan copy.md' })
+  })
+
+  it('rejects missing sources, folders and invalid paths', async () => {
+    expect((await duplicateNote(dir, 'ghost.md')).ok).toBe(false)
+    expect((await duplicateNote(dir, 'projects')).ok).toBe(false)
+    expect((await duplicateNote(dir, '')).ok).toBe(false)
+  })
+})
+
+describe('movePath', () => {
+  it('moves a file into a folder and back to the root', async () => {
+    expect(await movePath(dir, 'Fresh.md', 'inbox')).toEqual({ ok: true, path: 'inbox/Fresh.md' })
+    expect(await exists('inbox/Fresh.md')).toBe(true)
+    expect(await exists('Fresh.md')).toBe(false)
+    expect(await movePath(dir, 'inbox/Fresh.md', '')).toEqual({ ok: true, path: 'Fresh.md' })
+    expect(await exists('Fresh.md')).toBe(true)
+  })
+
+  it('is a no-op when the destination is the current folder', async () => {
+    const result = await movePath(dir, 'Fresh.md', '')
+    expect(result).toEqual({ ok: true, path: 'Fresh.md' })
+  })
+
+  it('rejects a destination whose name already exists', async () => {
+    await writeFile(join(dir, 'inbox', 'dupe.md'), 'a')
+    await writeFile(join(dir, 'dupe.md'), 'b')
+    const result = await movePath(dir, 'dupe.md', 'inbox')
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/already exists/)
+    expect(await exists('dupe.md')).toBe(true)
+  })
+
+  it('rejects missing sources and folders, and folders moving into themselves', async () => {
+    await mkdir(join(dir, 'inbox', 'sub'), { recursive: true })
+    expect((await movePath(dir, 'ghost.md', '')).ok).toBe(false)
+    expect((await movePath(dir, 'inbox', 'ghost')).ok).toBe(false)
+    expect((await movePath(dir, 'inbox', 'inbox')).ok).toBe(false)
+    expect((await movePath(dir, 'inbox', 'inbox/sub')).ok).toBe(false)
+    expect((await movePath(dir, '', 'inbox')).ok).toBe(false)
   })
 })

@@ -19,7 +19,7 @@ import { addRecent, loadRecent } from './recent'
 import * as queries from './db/queries'
 import { parseFile } from './vault/parser'
 import { resolveTarget, type ResolveNote } from './vault/resolve'
-import { createFolder, renamePath, writeNote } from './vault/ops'
+import { createFolder, createNote, duplicateNote, movePath, renamePath, writeNote } from './vault/ops'
 import { captureChange, captureDelete } from './vault/history'
 import { scanVault } from './vault/scanner'
 import { startWatcher } from './vault/watcher'
@@ -219,6 +219,24 @@ export function registerIpc(): void {
   })
   ipcMain.handle('op:delete', (_event, relPath: unknown): Promise<OpResult> => {
     return deleteItem(relPath)
+  })
+  ipcMain.handle('op:newNote', (_event, parentRel: unknown, name: unknown): Promise<OpResult> => {
+    if (!appState.root) return Promise.resolve({ ok: false, error: 'No vault open' })
+    if (typeof parentRel !== 'string' || typeof name !== 'string')
+      return Promise.resolve({ ok: false, error: 'Invalid request' })
+    return createNote(appState.root, parentRel, name)
+  })
+  ipcMain.handle('op:duplicate', (_event, relPath: unknown): Promise<OpResult> => {
+    if (!appState.root) return Promise.resolve({ ok: false, error: 'No vault open' })
+    if (typeof relPath !== 'string' || !relPath)
+      return Promise.resolve({ ok: false, error: 'Invalid request' })
+    return duplicateNote(appState.root, relPath)
+  })
+  ipcMain.handle('op:move', (_event, relPath: unknown, destFolder: unknown): Promise<OpResult> => {
+    if (!appState.root) return Promise.resolve({ ok: false, error: 'No vault open' })
+    if (typeof relPath !== 'string' || typeof destFolder !== 'string')
+      return Promise.resolve({ ok: false, error: 'Invalid request' })
+    return movePath(appState.root, relPath, destFolder)
   })
   ipcMain.handle('vault:state', (): VaultState => ({
     root: appState.root,

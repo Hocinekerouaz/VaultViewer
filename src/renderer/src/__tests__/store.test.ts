@@ -16,6 +16,9 @@ const api = {
   writeFile: vi.fn(),
   renamePath: vi.fn(),
   deletePath: vi.fn(),
+  createNote: vi.fn(),
+  duplicatePath: vi.fn(),
+  movePath: vi.fn(),
   getBacklinks: vi.fn(),
   getOutgoing: vi.fn(),
   resolveNoteLinks: vi.fn(),
@@ -604,5 +607,67 @@ describe('search scope, cursor and history', () => {
     useStore.getState().clearSearchHistory()
     expect(useStore.getState().searchHistory).toEqual([])
     expect(localStore.get('vv-search-history')).toBe('[]')
+  })
+})
+
+describe('file operations', () => {
+  it('newNote creates the file and opens it', async () => {
+    api.createNote.mockResolvedValue({ ok: true, path: 'sub/Fresh.md' })
+    api.readFile.mockResolvedValue(makeView('sub/Fresh.md', '# Fresh'))
+    useStore.setState({ tree: ['a.md', 'b.md'] })
+    const result = await useStore.getState().newNote('sub', 'Fresh')
+    expect(api.createNote).toHaveBeenCalledWith('sub', 'Fresh')
+    expect(result).toBe('sub/Fresh.md')
+    expect(useStore.getState().openPath).toBe('sub/Fresh.md')
+    expect(useStore.getState().tree).toContain('sub/Fresh.md')
+    expect(useStore.getState().selectedPath ?? useStore.getState().openPath).toBe('sub/Fresh.md')
+  })
+
+  it('newNote surfaces the error and opens nothing', async () => {
+    api.createNote.mockResolvedValue({ ok: false, error: 'An item with that name already exists' })
+    const result = await useStore.getState().newNote('', 'Fresh')
+    expect(result).toBeNull()
+    expect(useStore.getState().openPath).toBeNull()
+    expect(useStore.getState().toast).toBe('An item with that name already exists')
+  })
+
+  it('duplicateNote opens the copy', async () => {
+    api.duplicatePath.mockResolvedValue({ ok: true, path: 'a copy.md' })
+    api.readFile.mockResolvedValue(makeView('a copy.md', '# a'))
+    const result = await useStore.getState().duplicateNote('a.md')
+    expect(api.duplicatePath).toHaveBeenCalledWith('a.md')
+    expect(result).toBe('a copy.md')
+    expect(useStore.getState().openPath).toBe('a copy.md')
+    expect(useStore.getState().tree).toContain('a copy.md')
+  })
+
+  it('duplicateNote surfaces the error', async () => {
+    api.duplicatePath.mockResolvedValue({ ok: false, error: 'That item no longer exists' })
+    const result = await useStore.getState().duplicateNote('ghost.md')
+    expect(result).toBeNull()
+    expect(useStore.getState().toast).toBe('That item no longer exists')
+  })
+
+  it('moveItem remaps the tree, pins and open path', async () => {
+    api.movePath.mockResolvedValue({ ok: true, path: 'sub/a.md' })
+    api.readFile.mockResolvedValue(makeView('sub/a.md', '# a'))
+    useStore.setState({ openPath: 'a.md', selectedPath: 'a.md', pinned: ['a.md'], tree: ['a.md', 'b.md'] })
+    const result = await useStore.getState().moveItem('a.md', 'sub')
+    expect(api.movePath).toHaveBeenCalledWith('a.md', 'sub')
+    expect(result).toBe(true)
+    expect(useStore.getState().tree).toEqual(['sub/a.md', 'b.md'])
+    expect(useStore.getState().pinned).toEqual(['sub/a.md'])
+    expect(useStore.getState().openPath).toBe('sub/a.md')
+    expect(localStore.get('vv-pins:/vault')).toBe('["sub/a.md"]')
+  })
+
+  it('moveItem is a no-op for the current folder and false on failure', async () => {
+    api.movePath.mockResolvedValue({ ok: true, path: 'a.md' })
+    useStore.setState({ openPath: 'a.md' })
+    expect(await useStore.getState().moveItem('a.md', '')).toBe(true)
+    expect(useStore.getState().openPath).toBe('a.md')
+    api.movePath.mockResolvedValue({ ok: false, error: 'An item with that name already exists' })
+    expect(await useStore.getState().moveItem('b.md', '')).toBe(false)
+    expect(useStore.getState().toast).toBe('An item with that name already exists')
   })
 })

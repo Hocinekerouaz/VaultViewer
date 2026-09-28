@@ -1776,3 +1776,13 @@ a:focus-visible,
   color: var(--link);
   font-weight: 600;
 }
+
+.tree-folder.drop-hover {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tree.drop-hover {
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+}

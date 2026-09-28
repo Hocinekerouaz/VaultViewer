@@ -12,6 +12,7 @@ import {
   ancestorsOf,
   buildTree,
   filterTree,
+  isInternalNoteDrag,
   NOTE_DRAG_TYPE,
   visibleRows,
   type TreeNode
@@ -25,6 +26,8 @@ interface RowControl {
   openPath: string | null
   renamingPath: string | null
   creatingIn: string | null
+  creatingNoteIn: string | null
+  dropTarget: string | null
   select: (path: string) => void
   open: (path: string) => void
   toggle: (key: string) => void
@@ -33,7 +36,14 @@ interface RowControl {
   cancelRename: () => void
   commitCreate: (parent: string, name: string) => void
   cancelCreate: () => void
+  commitCreateNote: (parent: string, name: string) => void
+  cancelCreateNote: () => void
+  dropOver: (key: string | null) => void
+  dropNote: (event: React.DragEvent, destFolder: string) => void
 }
+
+const isNoteDrag = (event: { dataTransfer: DataTransfer }): boolean =>
+  isInternalNoteDrag([...event.dataTransfer.types])
 
 function IconFolderPlus() {
   return (
@@ -199,7 +209,7 @@ function TreeRow({
         onDragStart={(event) => {
           event.dataTransfer.setData('text/plain', path)
           event.dataTransfer.setData(NOTE_DRAG_TYPE, path)
-          event.dataTransfer.effectAllowed = 'copy'
+          event.dataTransfer.effectAllowed = 'copyMove'
           ctl.select(path)
         }}
       >
@@ -222,13 +232,15 @@ function TreeRow({
   }
   const isCollapsed = ctl.collapsed.has(key) && !ctl.forceExpand
   const creating = ctl.creatingIn === key
+  const creatingNote = ctl.creatingNoteIn === key
+  const dropHover = ctl.dropTarget === key
   const selected = key === ctl.selectedPath
   const hasChildren = node.children.length > 0
   return (
     <div className="tree-folder-block">
       <button
         type="button"
-        className={`tree-folder ${selected ? 'selected' : ''}`}
+        className={`tree-folder ${selected ? 'selected' : ''} ${dropHover ? 'drop-hover' : ''}`}
         style={{ paddingLeft: `${indent}px` }}
         data-tree-path={key}
         tabIndex={key === ctl.focusPath ? 0 : -1}
@@ -238,17 +250,37 @@ function TreeRow({
           ctl.toggle(key)
         }}
         onContextMenu={(event) => ctl.onContext(event, node)}
+        onDragOver={(event) => {
+          if (!isNoteDrag(event)) return
+          event.preventDefault()
+          event.stopPropagation()
+          event.dataTransfer.dropEffect = 'move'
+          ctl.dropOver(key)
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+          ctl.dropOver(null)
+        }}
+        onDrop={(event) => ctl.dropNote(event, key)}
       >
         <span className="tree-caret">
           {!hasChildren && !creating ? '' : isCollapsed ? '▸' : '▾'}
         </span>
         <span className="tree-name">{node.name}</span>
       </button>
-      {(!isCollapsed || creating) && (
+      {(!isCollapsed || creating || creatingNote) && (
         <div
           className="tree-children"
           style={{ '--gx': `${10 + (depth + 1) * 14 - 6}px` } as CSSProperties}
         >
+          {creatingNote && (
+            <InlineEdit
+              initial=""
+              placeholder="Note name"
+              onCommit={(name) => ctl.commitCreateNote(key, name)}
+              onCancel={ctl.cancelCreateNote}
+            />
+          )}
           {creating && (
             <InlineEdit
               initial=""
@@ -292,6 +324,9 @@ export function Sidebar() {
   const createFolderAt = useStore((s) => s.createFolderAt)
   const renameItem = useStore((s) => s.renameItem)
   const deleteItem = useStore((s) => s.deleteItem)
+  const newNote = useStore((s) => s.newNote)
+  const duplicateNote = useStore((s) => s.duplicateNote)
+  const moveItem = useStore((s) => s.moveItem)
   const recents = useStore((s) => s.recents)
   const root = useStore((s) => s.root)
   const openVaultPath = useStore((s) => s.openVaultPath)
@@ -304,6 +339,8 @@ export function Sidebar() {
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [creatingIn, setCreatingIn] = useState<string | null>(null)
+  const [creatingNoteIn, setCreatingNoteIn] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
@@ -385,6 +422,21 @@ export function Sidebar() {
     void createFolderAt(parent, name).then((path) => {
       if (path) setCreatingIn(null)
     })
+  }
+
+  const commitCreateNote = (parent: string, name: string): void => {
+    void newNote(parent, name).then((path) => {
+      if (path) setCreatingNoteIn(null)
+    })
+  }
+
+  const dropNote = (event: React.DragEvent, destFolder: string): void => {
+    if (!isNoteDrag(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDropTarget(null)
+    const path = event.dataTransfer.getData(NOTE_DRAG_TYPE)
+    if (path) void moveItem(path, destFolder)
   }
 
   const onContext = (event: React.MouseEvent, node: TreeNode): void => {
@@ -492,6 +544,8 @@ export function Sidebar() {
     openPath,
     renamingPath,
     creatingIn,
+    creatingNoteIn,
+    dropTarget,
     select: selectPath,
     open: (path) => void openNote(path),
     toggle: toggleFolder,
@@ -499,7 +553,11 @@ export function Sidebar() {
     commitRename,
     cancelRename: () => setRenamingPath(null),
     commitCreate,
-    cancelCreate: () => setCreatingIn(null)
+    cancelCreate: () => setCreatingIn(null),
+    commitCreateNote,
+    cancelCreateNote: () => setCreatingNoteIn(null),
+    dropOver: setDropTarget,
+    dropNote
   }
 
   const menuNode = menu?.node ?? null
@@ -625,7 +683,32 @@ export function Sidebar() {
               })}
             </div>
           )}
-          <div className="tree" ref={treeRef} onKeyDown={onKeyDown} onContextMenu={onTreeContextMenu}>
+          <div
+            className={`tree ${dropTarget === '' ? 'drop-hover' : ''}`}
+            ref={treeRef}
+            onKeyDown={onKeyDown}
+            onContextMenu={onTreeContextMenu}
+            onDragOver={(event) => {
+              if (!isNoteDrag(event)) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = 'move'
+              setDropTarget('')
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+              setDropTarget(null)
+            }}
+            onDrop={(event) => dropNote(event, '')}
+          >
+            {creatingNoteIn === '' && (
+              <InlineEdit
+                initial=""
+                placeholder="Note name"
+                onCommit={(name) => commitCreateNote('', name)}
+                onCancel={() => setCreatingNoteIn(null)}
+              />
+            )}
             {creatingIn === '' && (
               <InlineEdit
                 initial=""
@@ -649,16 +732,28 @@ export function Sidebar() {
           {menu && (
             <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
               {(!menuNode || !menuNode.isFile) && (
-                <button
-                  type="button"
-                  className="ctx-item"
-                  onClick={() => {
-                    setCreatingIn(menuNode?.path ?? '')
-                    setMenu(null)
-                  }}
-                >
-                  New folder
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    onClick={() => {
+                      setCreatingNoteIn(menuNode?.path ?? '')
+                      setMenu(null)
+                    }}
+                  >
+                    New note
+                  </button>
+                  <button
+                    type="button"
+                    className="ctx-item"
+                    onClick={() => {
+                      setCreatingIn(menuNode?.path ?? '')
+                      setMenu(null)
+                    }}
+                  >
+                    New folder
+                  </button>
+                </>
               )}
               {menuNode && menuNode.path && (() => {
                 const itemPath = menuNode.path
@@ -675,6 +770,18 @@ export function Sidebar() {
                       <span>Rename</span>
                       <span className="ctx-key">F2</span>
                     </button>
+                    {menuNode.isFile && (
+                      <button
+                        type="button"
+                        className="ctx-item"
+                        onClick={() => {
+                          void duplicateNote(itemPath)
+                          setMenu(null)
+                        }}
+                      >
+                        Duplicate
+                      </button>
+                    )}
                     {menuNode.isFile && (
                     <button
                       type="button"
