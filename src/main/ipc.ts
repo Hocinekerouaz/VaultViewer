@@ -1,11 +1,13 @@
 import { dialog, ipcMain, shell } from 'electron'
 import { readFileSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type {
   IndexProgress,
   LinkMap,
   OpResult,
   OpenVaultResult,
   RecentVault,
+  SaveResult,
   VaultChange,
   VaultState
 } from '../shared/types'
@@ -15,7 +17,7 @@ import { addRecent, loadRecent } from './recent'
 import * as queries from './db/queries'
 import { parseFile } from './vault/parser'
 import { resolveTarget, type ResolveNote } from './vault/resolve'
-import { createFolder, renamePath } from './vault/ops'
+import { createFolder, renamePath, writeNote } from './vault/ops'
 import { scanVault } from './vault/scanner'
 import { startWatcher } from './vault/watcher'
 import { VaultIndex } from './vault/indexer'
@@ -152,7 +154,7 @@ async function deleteItem(relPath: unknown): Promise<OpResult> {
   if (typeof relPath !== 'string' || !relPath || relPath === '.' || relPath === '..')
     return { ok: false, error: 'Invalid item path' }
   const abs = insideRoot(root, relPath)
-  if (!abs || abs === root) return { ok: false, error: 'Cannot delete the vault root' }
+  if (!abs || abs === resolve(root)) return { ok: false, error: 'Cannot delete the vault root' }
   try {
     if (!statSync(abs)) return { ok: false, error: 'That item no longer exists' }
   } catch {
@@ -212,6 +214,16 @@ export function registerIpc(): void {
   ipcMain.handle('file:read', (_event, relPath: unknown) => {
     if (typeof relPath !== 'string') return null
     return readFileView(relPath)
+  })
+  ipcMain.handle('file:write', async (_event, relPath: unknown, content: unknown): Promise<SaveResult> => {
+    if (!appState.root) return { ok: false, error: 'No vault open' }
+    if (typeof relPath !== 'string' || !relPath || typeof content !== 'string')
+      return { ok: false, error: 'Invalid save request' }
+    const result = await writeNote(appState.root, relPath, content)
+    if (!result.ok) return result
+    const view = readFileView(relPath)
+    if (!view) return { ok: false, error: 'Could not read the saved file' }
+    return { ok: true, path: relPath, view }
   })
   ipcMain.handle('search:query', (_event, query: unknown) => {
     const index = requireIndex()

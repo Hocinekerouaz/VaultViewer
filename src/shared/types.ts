@@ -17,6 +17,10 @@ export interface OpResult {
   path?: string
 }
 
+export interface SaveResult extends OpResult {
+  view?: FileView
+}
+
 export interface FileView {
   kind: 'markdown' | 'text'
   path: string

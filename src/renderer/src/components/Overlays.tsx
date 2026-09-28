@@ -50,6 +50,54 @@ export function AmbiguityPicker() {
   )
 }
 
+export function SwitchModal() {
+  const pending = useStore((s) => s.pendingSwitch)
+  const openPath = useStore((s) => s.openPath)
+  const resolveSwitch = useStore((s) => s.resolveSwitch)
+
+  if (!pending) return null
+  const name = (openPath ?? '').split('/').pop() ?? openPath ?? ''
+
+  return (
+    <div
+      className="modal-overlay"
+      onClick={() => void resolveSwitch('cancel')}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') void resolveSwitch('cancel')
+      }}
+      role="presentation"
+    >
+      <div
+        className="modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Unsaved changes"
+      >
+        <div className="modal-title">
+          Save changes to <code>{name}</code> first?
+        </div>
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="ghost-btn"
+            autoFocus
+            onClick={() => void resolveSwitch('cancel')}
+          >
+            Cancel
+          </button>
+          <button type="button" className="ghost-btn" onClick={() => void resolveSwitch('discard')}>
+            Discard
+          </button>
+          <button type="button" className="primary-btn" onClick={() => void resolveSwitch('save')}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Toast() {
   const toast = useStore((s) => s.toast)
   if (!toast) return null

@@ -14,6 +14,16 @@ import type {
 
 type Theme = 'light' | 'dark'
 
+export type ViewMode = 'read' | 'edit'
+export type ConflictState = 'changed' | 'deleted' | null
+export type PendingSwitch =
+  | { kind: 'open'; path: string; findTerm: string | null }
+  | { kind: 'read' }
+
+export function isDirty(state: { draft: string | null; note: FileView | null }): boolean {
+  return state.draft !== null && state.note !== null && state.draft !== state.note.raw
+}
+
 interface StoreState {
   root: string | null
   tree: string[]
@@ -39,6 +49,10 @@ interface StoreState {
   autoReveal: boolean
   revealTarget: string | null
   revealTick: number
+  viewMode: ViewMode
+  draft: string | null
+  conflict: ConflictState
+  pendingSwitch: PendingSwitch | null
   setFilter: (value: string) => void
   setQuery: (value: string) => void
   setTheme: (value: Theme) => void
@@ -56,6 +70,14 @@ interface StoreState {
   openVaultPath: (path: string) => Promise<void>
   openFolder: () => Promise<void>
   openNote: (relPath: string, findTerm?: string | null) => Promise<void>
+  setViewMode: (mode: ViewMode) => Promise<void>
+  updateDraft: (text: string) => void
+  saveDraft: () => Promise<boolean>
+  revertDraft: () => void
+  resolveSwitch: (action: 'save' | 'discard' | 'cancel') => Promise<void>
+  reloadFromDisk: () => void
+  keepEditing: () => void
+  closeDeletedFile: () => void
   runSearch: () => Promise<void>
   clearSearch: () => void
   clickWiki: (target: string) => void
@@ -101,12 +123,40 @@ export const useStore = create<StoreState>((set, get) => {
       pendingFind: null,
       collapsed: loadCollapsed(result.root),
       revealTarget: null,
+      viewMode: 'read',
+      draft: null,
+      conflict: null,
+      pendingSwitch: null,
       progress: { phase: 'indexing', indexed: 0, total: result.tree.length }
     })
     const recents = await window.api.recentVaults()
     set({ recents })
     const first = firstMarkdown(result.tree)
     if (first) await get().openNote(first)
+  }
+
+  const doOpen = async (relPath: string, findTerm?: string | null): Promise<void> => {
+    const [note, backlinks, outgoing, linkMap] = await Promise.all([
+      window.api.readFile(relPath),
+      window.api.getBacklinks(relPath),
+      window.api.getOutgoing(relPath),
+      window.api.resolveNoteLinks(relPath)
+    ])
+    if (!note) {
+      get().showToast(`Could not read ${relPath}`)
+      return
+    }
+    set({
+      openPath: relPath,
+      selectedPath: relPath,
+      note,
+      backlinks,
+      outgoing,
+      linkMap,
+      pendingFind: findTerm ?? null,
+      draft: get().viewMode === 'edit' ? note.raw : null,
+      conflict: null
+    })
   }
 
   return {
@@ -134,6 +184,10 @@ export const useStore = create<StoreState>((set, get) => {
     autoReveal: true,
     revealTarget: null,
     revealTick: 0,
+    viewMode: 'read',
+    draft: null,
+    conflict: null,
+    pendingSwitch: null,
 
     setFilter: (value) => set({ filter: value }),
     setQuery: (value) => set({ query: value }),
@@ -188,7 +242,11 @@ export const useStore = create<StoreState>((set, get) => {
         selectedPath: shift(selectedPath)
       })
       const nextOpen = shift(openPath)
-      if (nextOpen && nextOpen !== openPath) await get().openNote(nextOpen)
+      if (nextOpen && nextOpen !== openPath) {
+        const current = get().note
+        set({ openPath: nextOpen, note: current ? { ...current, path: nextOpen } : null })
+        await get().refreshNoteMeta()
+      }
       return newPath
     },
     deleteItem: async (relPath) => {
@@ -215,7 +273,11 @@ export const useStore = create<StoreState>((set, get) => {
               outgoing: [],
               linkMap: {},
               pendingWiki: null,
-              pendingFind: null
+              pendingFind: null,
+              viewMode: 'read' as const,
+              draft: null,
+              conflict: null,
+              pendingSwitch: null
             }
           : {})
       })
@@ -278,25 +340,91 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     openNote: async (relPath, findTerm) => {
-      const [note, backlinks, outgoing, linkMap] = await Promise.all([
-        window.api.readFile(relPath),
-        window.api.getBacklinks(relPath),
-        window.api.getOutgoing(relPath),
-        window.api.resolveNoteLinks(relPath)
-      ])
-      if (!note) {
-        get().showToast(`Could not read ${relPath}`)
+      if (isDirty(get())) {
+        set({ pendingSwitch: { kind: 'open', path: relPath, findTerm: findTerm ?? null } })
         return
       }
+      await doOpen(relPath, findTerm)
+    },
+
+    setViewMode: async (mode) => {
+      const state = get()
+      if (mode === state.viewMode || !state.note) return
+      if (mode === 'read') {
+        if (isDirty(state)) {
+          set({ pendingSwitch: { kind: 'read' } })
+          return
+        }
+        set({ viewMode: 'read', draft: null, conflict: null })
+        return
+      }
+      set({ viewMode: 'edit', draft: state.note.raw, conflict: null })
+    },
+
+    updateDraft: (text) => set({ draft: text }),
+
+    saveDraft: async () => {
+      const { openPath, draft, root } = get()
+      if (!root || !openPath || draft === null) return false
+      const res = await window.api.writeFile(openPath, draft)
+      if (!res.ok || !res.view) {
+        get().showToast(res.error ?? 'Could not save the file')
+        return false
+      }
+      set({ note: res.view, draft: null, conflict: null })
+      await get().refreshNoteMeta()
+      get().showToast('Saved')
+      return true
+    },
+
+    revertDraft: () => {
+      set({ draft: null, conflict: null })
+      get().showToast('Changes discarded')
+    },
+
+    resolveSwitch: async (action) => {
+      const pending = get().pendingSwitch
+      if (!pending) return
+      if (action === 'cancel') {
+        set({ pendingSwitch: null })
+        return
+      }
+      if (action === 'discard') {
+        set({ draft: null, conflict: null, pendingSwitch: null })
+        if (pending.kind === 'read') {
+          set({ viewMode: 'read' })
+          return
+        }
+        await doOpen(pending.path, pending.findTerm)
+        return
+      }
+      const saved = await get().saveDraft()
+      set({ pendingSwitch: null })
+      if (!saved) return
+      if (pending.kind === 'read') {
+        set({ viewMode: 'read' })
+        return
+      }
+      await doOpen(pending.path, pending.findTerm)
+    },
+
+    reloadFromDisk: () => set({ draft: null, conflict: null }),
+
+    keepEditing: () => set({ conflict: null }),
+
+    closeDeletedFile: () => {
       set({
-        openPath: relPath,
-        selectedPath: relPath,
-        note,
-        backlinks,
-        outgoing,
-        linkMap,
-        pendingFind: findTerm ?? null
+        viewMode: 'read',
+        draft: null,
+        conflict: null,
+        openPath: null,
+        note: null,
+        backlinks: [],
+        outgoing: [],
+        linkMap: {},
+        selectedPath: null
       })
+      get().showToast('The open file was removed')
     },
 
     refreshNoteMeta: async () => {
@@ -318,8 +446,16 @@ export const useStore = create<StoreState>((set, get) => {
       if (openPath) {
         const note = await window.api.readFile(openPath)
         if (note) {
-          set({ note })
+          const draft = get().draft
+          if (draft !== null) {
+            if (draft === note.raw) set({ note, draft: null, conflict: null })
+            else set({ note, conflict: 'changed' })
+          } else {
+            set({ note })
+          }
           await get().refreshNoteMeta()
+        } else if (get().viewMode === 'edit' && get().draft !== null) {
+          set({ conflict: 'deleted' })
         } else {
           set({
             openPath: null,

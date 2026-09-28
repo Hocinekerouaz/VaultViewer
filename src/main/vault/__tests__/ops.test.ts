@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createFolder, isValidName, renamePath } from '../ops'
+import { createFolder, isValidName, renamePath, writeNote } from '../ops'
 
 let dir: string
 
@@ -113,5 +113,51 @@ describe('renamePath', () => {
     expect((await renamePath(dir, 'ghost.md', 'x.md')).ok).toBe(false)
     expect((await renamePath(dir, '', 'x')).ok).toBe(false)
     expect((await renamePath(dir, '..', 'x')).ok).toBe(false)
+  })
+})
+
+describe('writeNote', () => {
+  it('overwrites an existing file with utf8 content', async () => {
+    const result = await writeNote(dir, 'note.md', '# rewritten\ncafé ✓')
+    expect(result).toEqual({ ok: true, path: 'note.md' })
+    expect(await readFile(join(dir, 'note.md'), 'utf8')).toBe('# rewritten\ncafé ✓')
+  })
+
+  it('writes into a subfolder', async () => {
+    const result = await writeNote(dir, 'work/deep/x.md', 'deep content')
+    expect(result.ok).toBe(true)
+    expect(await readFile(join(dir, 'work/deep/x.md'), 'utf8')).toBe('deep content')
+  })
+
+  it('recreates a file that no longer exists', async () => {
+    await rm(join(dir, 'recreated.md'), { force: true })
+    const result = await writeNote(dir, 'recreated.md', 'back')
+    expect(result.ok).toBe(true)
+    expect(await readFile(join(dir, 'recreated.md'), 'utf8')).toBe('back')
+  })
+
+  it('allows empty content', async () => {
+    const result = await writeNote(dir, 'recreated.md', '')
+    expect(result.ok).toBe(true)
+    expect(await readFile(join(dir, 'recreated.md'), 'utf8')).toBe('')
+  })
+
+  it('rejects traversal and invalid paths', async () => {
+    expect((await writeNote(dir, '../evil.md', 'x')).ok).toBe(false)
+    expect((await writeNote(dir, '', 'x')).ok).toBe(false)
+    expect((await writeNote(dir, '.', 'x')).ok).toBe(false)
+    expect((await writeNote(dir, '..', 'x')).ok).toBe(false)
+  })
+
+  it('rejects writing to a folder', async () => {
+    const result = await writeNote(dir, 'work', 'x')
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/folder/)
+  })
+
+  it('fails when the parent folder is missing', async () => {
+    const result = await writeNote(dir, 'ghost/file.md', 'x')
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/no longer exists/)
   })
 })

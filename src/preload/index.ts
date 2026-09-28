@@ -8,6 +8,7 @@ import type {
   OpenVaultResult,
   OutgoingItem,
   RecentVault,
+  SaveResult,
   SearchHit,
   VaultChange,
   VaultState
@@ -35,6 +36,8 @@ const api = {
   getVaultState: (): Promise<VaultState> => ipcRenderer.invoke('vault:state'),
   readFile: (relPath: string): Promise<FileView | null> =>
     ipcRenderer.invoke('file:read', relPath),
+  writeFile: (relPath: string, content: string): Promise<SaveResult> =>
+    ipcRenderer.invoke('file:write', relPath, content),
   search: (query: string): Promise<SearchHit[]> => ipcRenderer.invoke('search:query', query),
   searchTag: (tag: string): Promise<SearchHit[]> => ipcRenderer.invoke('search:tag', tag),
   getBacklinks: (relPath: string): Promise<BacklinkItem[]> =>

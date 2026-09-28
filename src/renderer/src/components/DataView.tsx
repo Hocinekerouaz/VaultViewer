@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FileView } from '@shared/types'
 import { dataKindOf, parseData, type DataOutcome } from '@/lib/dataParse'
-
-type Mode = 'structured' | 'raw'
+import { useStore } from '@/store'
 
 function scalarStyle(value: unknown): { cls: string; text: string } {
   if (value === null || value === undefined) return { cls: 'dv-null', text: String(value) }
@@ -137,40 +136,27 @@ function metaOf(outcome: DataOutcome): string {
 export function DataView({ note }: { note: FileView }) {
   const kind = useMemo(() => dataKindOf(note.path), [note.path])
   const outcome = useMemo(() => parseData(note.path, note.raw), [note.path, note.raw])
-  const [mode, setMode] = useState<Mode>('structured')
-
-  useEffect(() => {
-    setMode('structured')
-  }, [note.path])
+  const setViewMode = useStore((s) => s.setViewMode)
 
   if (!kind || !outcome) return <pre className="raw-view">{note.raw}</pre>
-
-  const active: Mode = outcome.ok ? mode : 'raw'
-  const label = kind === 'csv' ? 'Table' : 'Tree'
 
   return (
     <div className="data-view">
       <div className="data-toolbar">
-        <div className="segmented">
-          <button
-            type="button"
-            aria-pressed={active === 'structured'}
-            onClick={() => setMode('structured')}
-          >
-            {label}
-          </button>
-          <button type="button" aria-pressed={active === 'raw'} onClick={() => setMode('raw')}>
-            Raw
-          </button>
-        </div>
-        <span className="data-meta">{metaOf(outcome)}</span>
+        <span className="data-kind-label">{kind === 'csv' ? 'Table' : 'Tree'}</span>
+        <span className="data-meta">{outcome.ok ? metaOf(outcome) : ''}</span>
       </div>
       {!outcome.ok && (
-        <p className="data-error">
-          Couldn’t parse {kind.toUpperCase()}: {outcome.error} — showing raw source.
-        </p>
+        <div className="data-error">
+          <p>
+            Couldn’t parse {kind.toUpperCase()}: {outcome.error}
+          </p>
+          <button type="button" className="ghost-btn" onClick={() => void setViewMode('edit')}>
+            Edit source
+          </button>
+        </div>
       )}
-      {active === 'raw' || !outcome.ok ? (
+      {!outcome.ok ? (
         <pre className="raw-view">{note.raw}</pre>
       ) : outcome.kind === 'csv' ? (
         <DataTable rows={outcome.rows} />

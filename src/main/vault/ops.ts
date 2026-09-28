@@ -1,4 +1,5 @@
-import { mkdir, rename, stat } from 'node:fs/promises'
+import { mkdir, rename, stat, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { insideRoot } from '../fsutil'
 import type { OpResult } from '../../shared/types'
 
@@ -47,7 +48,7 @@ export async function renamePath(root: string, relPath: string, newName: string)
   if (!relPath || relPath === '.' || relPath === '..') return fail('Invalid item path')
   if (!isValidName(newName)) return fail('Invalid name')
   const srcAbs = insideRoot(root, relPath)
-  if (!srcAbs || srcAbs === root) return fail('Invalid item path')
+  if (!srcAbs || srcAbs === resolve(root)) return fail('Invalid item path')
   try {
     await stat(srcAbs)
   } catch {
@@ -71,5 +72,23 @@ export async function renamePath(root: string, relPath: string, newName: string)
     return { ok: true, path: nextRel }
   } catch (error) {
     return fsFail(error, 'Could not rename the item')
+  }
+}
+
+export async function writeNote(root: string, relPath: string, content: string): Promise<OpResult> {
+  if (!relPath || relPath === '.' || relPath === '..') return fail('Invalid file path')
+  const abs = insideRoot(root, relPath)
+  if (!abs || abs === resolve(root)) return fail('Invalid file path')
+  try {
+    const info = await stat(abs)
+    if (info.isDirectory()) return fail('That path is a folder')
+  } catch {
+    void 0
+  }
+  try {
+    await writeFile(abs, content, 'utf8')
+    return { ok: true, path: relPath }
+  } catch (error) {
+    return fsFail(error, 'Could not save the file')
   }
 }

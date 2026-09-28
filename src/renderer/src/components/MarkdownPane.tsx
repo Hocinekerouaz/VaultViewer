@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { DataView } from './DataView'
+import { PaneToolbar } from './PaneToolbar'
+import { EditorPane } from './EditorPane'
 import { rehypeVaultAssets, remarkVaultLinks } from '@/lib/markdownPlugins'
 import { dataKindOf } from '@/lib/dataParse'
 import { useStore } from '@/store'
@@ -15,6 +17,7 @@ export function MarkdownPane() {
   const clickWiki = useStore((s) => s.clickWiki)
   const clickTag = useStore((s) => s.clickTag)
   const pendingFind = useStore((s) => s.pendingFind)
+  const viewMode = useStore((s) => s.viewMode)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -63,72 +66,79 @@ export function MarkdownPane() {
 
   return (
     <div className="reading" ref={bodyRef}>
-      <FrontmatterPanel note={note} onTagClick={(tag) => void clickTag(tag)} />
-      {note.kind === 'markdown' ? (
-        <article className="note-body">
-          <ReactMarkdown
-            remarkPlugins={remarkPlugins}
-            urlTransform={(url, key) => {
-              if (key === 'href' && /^(vaultlink:|vaulttag:)/.test(url)) return url
-              if (key === 'src' && url.startsWith('vault-asset:')) return url
-              return defaultUrlTransform(url)
-            }}
-            rehypePlugins={[
-              [rehypeHighlight, { detect: true, ignoreMissing: true }],
-              [rehypeVaultAssets, note.path]
-            ]}
-            components={{
-              a: (props) => {
-                const href = props.href ?? ''
-                if (href.startsWith('vaultlink:')) {
-                  const target = decodeURIComponent(href.slice('vaultlink:'.length))
-                  const isMissing = missing.has(target)
-                  return (
-                    <a
-                      href="#"
-                      className={`wikilink ${isMissing ? 'wikilink-missing' : ''}`}
-                      onClick={(event) => {
-                        event.preventDefault()
-                        clickWiki(target)
-                      }}
-                    >
-                      {props.children}
-                    </a>
-                  )
-                }
-                if (href.startsWith('vaulttag:')) {
-                  const tag = decodeURIComponent(href.slice('vaulttag:'.length))
-                  return (
-                    <a
-                      href="#"
-                      className="tag-chip"
-                      onClick={(event) => {
-                        event.preventDefault()
-                        void clickTag(tag)
-                      }}
-                    >
-                      {props.children}
-                    </a>
-                  )
-                }
-                if (/^https?:/i.test(href)) {
-                  return (
-                    <a href={href} target="_blank" rel="noreferrer">
-                      {props.children}
-                    </a>
-                  )
-                }
-                return <a {...props} />
-              }
-            }}
-          >
-            {note.body}
-          </ReactMarkdown>
-        </article>
-      ) : dataKindOf(note.path) ? (
-        <DataView note={note} />
+      <PaneToolbar />
+      {viewMode === 'edit' ? (
+        <EditorPane />
       ) : (
-        <pre className="raw-view">{note.body}</pre>
+        <>
+          <FrontmatterPanel note={note} onTagClick={(tag) => void clickTag(tag)} />
+          {note.kind === 'markdown' ? (
+            <article className="note-body">
+              <ReactMarkdown
+                remarkPlugins={remarkPlugins}
+                urlTransform={(url, key) => {
+                  if (key === 'href' && /^(vaultlink:|vaulttag:)/.test(url)) return url
+                  if (key === 'src' && url.startsWith('vault-asset:')) return url
+                  return defaultUrlTransform(url)
+                }}
+                rehypePlugins={[
+                  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+                  [rehypeVaultAssets, note.path]
+                ]}
+                components={{
+                  a: (props) => {
+                    const href = props.href ?? ''
+                    if (href.startsWith('vaultlink:')) {
+                      const target = decodeURIComponent(href.slice('vaultlink:'.length))
+                      const isMissing = missing.has(target)
+                      return (
+                        <a
+                          href="#"
+                          className={`wikilink ${isMissing ? 'wikilink-missing' : ''}`}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            clickWiki(target)
+                          }}
+                        >
+                          {props.children}
+                        </a>
+                      )
+                    }
+                    if (href.startsWith('vaulttag:')) {
+                      const tag = decodeURIComponent(href.slice('vaulttag:'.length))
+                      return (
+                        <a
+                          href="#"
+                          className="tag-chip"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            void clickTag(tag)
+                          }}
+                        >
+                          {props.children}
+                        </a>
+                      )
+                    }
+                    if (/^https?:/i.test(href)) {
+                      return (
+                        <a href={href} target="_blank" rel="noreferrer">
+                          {props.children}
+                        </a>
+                      )
+                    }
+                    return <a {...props} />
+                  }
+                }}
+              >
+                {note.body}
+              </ReactMarkdown>
+            </article>
+          ) : dataKindOf(note.path) ? (
+            <DataView note={note} />
+          ) : (
+            <pre className="raw-view">{note.body}</pre>
+          )}
+        </>
       )}
     </div>
   )

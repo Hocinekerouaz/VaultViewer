@@ -22,9 +22,10 @@ function registerAssetProtocol(): void {
     try {
       const url = new URL(request.url)
       const rel = decodeURIComponent(url.pathname.replace(/^\//, ''))
-      const abs = resolve(root, rel)
-      const prefix = root.endsWith(sep) ? root : root + sep
-      if (abs !== root && !abs.startsWith(prefix)) {
+      const base = resolve(root)
+      const abs = resolve(base, rel)
+      const prefix = base.endsWith(sep) ? base : base + sep
+      if (abs !== base && !abs.startsWith(prefix)) {
         return new Response('Forbidden', { status: 403 })
       }
       if (!existsSync(abs)) return new Response('Not found', { status: 404 })
