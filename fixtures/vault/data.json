@@ -1,0 +1,6 @@
+{
+  "name": "vault-viewer-fixture",
+  "version": 1,
+  "items": [1, 2, 3],
+  "nested": { "ok": true }
+}

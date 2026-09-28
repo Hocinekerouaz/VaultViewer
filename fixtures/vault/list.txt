@@ -1,0 +1,3 @@
+a plain text file
+second line
+third line
