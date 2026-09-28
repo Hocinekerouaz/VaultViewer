@@ -1,5 +1,11 @@
 import { create } from 'zustand'
 import { ancestorsOf, remapCollapsed } from '@/lib/tree'
+import {
+  applyScope,
+  cycleScopeValue,
+  pushSearchHistory,
+  type SearchScope
+} from '@/lib/searchScope'
 import type {
   BacklinkItem,
   FileView,
@@ -40,6 +46,9 @@ interface StoreState {
   query: string
   hits: SearchHit[]
   searchOpen: boolean
+  scope: SearchScope
+  hitCursor: number
+  searchHistory: string[]
   tagFilter: string | null
   theme: Theme
   toast: string | null
@@ -91,6 +100,12 @@ interface StoreState {
   closeHistory: () => void
   runSearch: () => Promise<void>
   clearSearch: () => void
+  cycleScope: (delta: number) => void
+  moveHitCursor: (delta: number) => void
+  jumpHit: (delta: number) => Promise<void>
+  openSearchHit: (index: number, closeDropdown: boolean) => Promise<void>
+  useSearchHistoryItem: (item: string) => void
+  clearSearchHistory: () => void
   clickWiki: (target: string) => void
   clickTag: (tag: string) => Promise<void>
   dismissWiki: () => void
@@ -135,10 +150,40 @@ function savePins(root: string, pinned: string[]): void {
   }
 }
 
+function loadSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem('vv-search-history')
+    if (!raw) return []
+    const list: unknown = JSON.parse(raw)
+    if (Array.isArray(list)) {
+      return list.filter((item): item is string => typeof item === 'string').slice(0, 10)
+    }
+  } catch {
+    void 0
+  }
+  return []
+}
+
+function saveSearchHistory(list: string[]): void {
+  try {
+    localStorage.setItem('vv-search-history', JSON.stringify(list))
+  } catch {
+    void 0
+  }
+}
+
 let initialized = false
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useStore = create<StoreState>((set, get) => {
+  const recordSearch = (query: string): void => {
+    const current = get().searchHistory
+    const next = pushSearchHistory(current, query)
+    if (next === current) return
+    set({ searchHistory: next })
+    saveSearchHistory(next)
+  }
+
   const applyVault = async (result: OpenVaultResult): Promise<void> => {
     set({
       root: result.root,
@@ -210,6 +255,9 @@ export const useStore = create<StoreState>((set, get) => {
     query: '',
     hits: [],
     searchOpen: false,
+    scope: 'vault',
+    hitCursor: 0,
+    searchHistory: [],
     tagFilter: null,
     theme: 'light',
     toast: null,
@@ -349,6 +397,7 @@ export const useStore = create<StoreState>((set, get) => {
         document.documentElement.dataset.theme = stored
         set({ theme: stored })
       }
+      set({ searchHistory: loadSearchHistory() })
       const storedAuto = localStorage.getItem('vv-autoreveal')
       if (storedAuto === '0') set({ autoReveal: false })
       if (storedAuto === '1') set({ autoReveal: true })
@@ -574,22 +623,65 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     runSearch: async () => {
-      const { query, tagFilter } = get()
+      const { query, tagFilter, scope, openPath } = get()
       if (tagFilter) {
         const hits = await window.api.searchTag(tagFilter)
-        set({ hits, searchOpen: true })
+        set({ hits: applyScope(hits, scope, openPath), searchOpen: true, hitCursor: 0 })
         return
       }
       const trimmed = query.trim()
       if (!trimmed) {
-        set({ hits: [], searchOpen: false })
+        set({ hits: [], hitCursor: 0 })
         return
       }
       const hits = await window.api.search(trimmed)
-      set({ hits, searchOpen: true })
+      set({ hits: applyScope(hits, scope, openPath), searchOpen: true, hitCursor: 0 })
     },
 
-    clearSearch: () => set({ query: '', hits: [], tagFilter: null, searchOpen: false }),
+    clearSearch: () =>
+      set({ query: '', hits: [], tagFilter: null, searchOpen: false, hitCursor: 0 }),
+
+    cycleScope: (delta) => {
+      const scope = cycleScopeValue(get().scope, delta)
+      set({ scope, hitCursor: 0 })
+      if (get().query.trim() || get().tagFilter) void get().runSearch()
+    },
+
+    moveHitCursor: (delta) => {
+      const { hits, hitCursor } = get()
+      if (!hits.length) return
+      set({ hitCursor: (((hitCursor + delta) % hits.length) + hits.length) % hits.length })
+    },
+
+    jumpHit: async (delta) => {
+      recordSearch(get().query)
+      const { hits, hitCursor } = get()
+      if (!hits.length) return
+      const index = Math.min(Math.max(hitCursor, 0), hits.length - 1)
+      await get().openSearchHit(index, false)
+      set({ hitCursor: (((index + delta) % hits.length) + hits.length) % hits.length })
+    },
+
+    openSearchHit: async (index, closeDropdown) => {
+      const { hits, tagFilter, query } = get()
+      const hit = hits[index]
+      if (!hit) return
+      recordSearch(query)
+      const term = tagFilter ?? query.trim().split(/\s+/)[0] ?? null
+      if (closeDropdown) set({ searchOpen: false })
+      await get().openNote(hit.path, term)
+    },
+
+    useSearchHistoryItem: (item) => {
+      recordSearch(item)
+      set({ query: item })
+      void get().runSearch()
+    },
+
+    clearSearchHistory: () => {
+      set({ searchHistory: [] })
+      saveSearchHistory([])
+    },
 
     clickWiki: (target) => {
       const outcome: ResolveOutcome | undefined = get().linkMap[target]

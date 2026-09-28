@@ -86,6 +86,9 @@ beforeEach(() => {
     query: '',
     hits: [],
     searchOpen: false,
+    scope: 'vault',
+    hitCursor: 0,
+    searchHistory: [],
     tagFilter: null,
     toast: null,
     pendingWiki: null,
@@ -524,5 +527,82 @@ describe('pins', () => {
     api.deletePath.mockResolvedValue({ ok: true, path: 'a.md' })
     await useStore.getState().deleteItem('a.md')
     expect(useStore.getState().pinned).toEqual(['b.md'])
+  })
+})
+
+describe('search scope, cursor and history', () => {
+  const mkHit = (path: string) => ({ path, title: path, snippet: '', score: 1 })
+
+  it('applies the folder scope to search results', async () => {
+    api.search.mockResolvedValue([mkHit('a.md'), mkHit('sub/b.md')])
+    useStore.setState({ query: 'x', scope: 'folder', openPath: 'a.md' })
+    await useStore.getState().runSearch()
+    expect(useStore.getState().hits.map((h) => h.path)).toEqual(['a.md'])
+  })
+
+  it('applies the note scope to search results', async () => {
+    api.search.mockResolvedValue([mkHit('a.md'), mkHit('b.md')])
+    useStore.setState({ query: 'x', scope: 'note', openPath: 'b.md' })
+    await useStore.getState().runSearch()
+    expect(useStore.getState().hits.map((h) => h.path)).toEqual(['b.md'])
+  })
+
+  it('cycles the scope, resets the cursor and re-runs an active search', async () => {
+    api.search.mockResolvedValue([mkHit('a.md')])
+    useStore.setState({ query: 'x', scope: 'vault', hitCursor: 0 })
+    await useStore.getState().runSearch()
+    useStore.setState({ hitCursor: 1 })
+    useStore.getState().cycleScope(1)
+    expect(useStore.getState().scope).toBe('folder')
+    expect(useStore.getState().hitCursor).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(api.search).toHaveBeenCalledTimes(2)
+  })
+
+  it('moves the hit cursor with wrap-around and ignores empty results', () => {
+    useStore.setState({ hits: [mkHit('a.md'), mkHit('b.md')], hitCursor: 0 })
+    useStore.getState().moveHitCursor(-1)
+    expect(useStore.getState().hitCursor).toBe(1)
+    useStore.getState().moveHitCursor(1)
+    expect(useStore.getState().hitCursor).toBe(0)
+    useStore.setState({ hits: [] })
+    useStore.getState().moveHitCursor(1)
+    expect(useStore.getState().hitCursor).toBe(0)
+  })
+
+  it('jump opens the current hit and advances the cursor', async () => {
+    api.search.mockResolvedValue([mkHit('b.md'), mkHit('a.md')])
+    useStore.setState({ query: 'x', scope: 'vault' })
+    await useStore.getState().runSearch()
+    api.readFile.mockResolvedValue(makeView('b.md', '# b'))
+    await useStore.getState().jumpHit(1)
+    expect(useStore.getState().openPath).toBe('b.md')
+    expect(useStore.getState().hitCursor).toBe(1)
+    expect(useStore.getState().searchHistory).toEqual(['x'])
+  })
+
+  it('jump records a query even when there are no hits', async () => {
+    useStore.setState({ query: '  hello  ', searchHistory: [], hits: [], hitCursor: 0 })
+    await useStore.getState().jumpHit(1)
+    expect(useStore.getState().searchHistory).toEqual(['hello'])
+    expect(localStore.get('vv-search-history')).toBe('["hello"]')
+    expect(useStore.getState().hitCursor).toBe(0)
+  })
+
+  it('restores a history item and re-runs the search', async () => {
+    api.search.mockResolvedValue([mkHit('a.md')])
+    useStore.getState().useSearchHistoryItem('alpha')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(useStore.getState().query).toBe('alpha')
+    expect(api.search).toHaveBeenCalledWith('alpha')
+    expect(useStore.getState().searchHistory).toEqual(['alpha'])
+  })
+
+  it('clears the persisted history', () => {
+    useStore.setState({ searchHistory: ['x'] })
+    localStore.set('vv-search-history', '["x"]')
+    useStore.getState().clearSearchHistory()
+    expect(useStore.getState().searchHistory).toEqual([])
+    expect(localStore.get('vv-search-history')).toBe('[]')
   })
 })

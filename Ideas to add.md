@@ -8,6 +8,6 @@
 
 ## New suggested upgrades
 - [x] Editor: split live preview
-- [ ] Search: scoped, cyclable, historical
+- [x] Search: scoped, cyclable, historical
 - [ ] File ops: New note + drag-to-move + duplicate
       (new note opens a settings dialog: file format .md / .txt / ...)
