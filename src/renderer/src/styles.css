@@ -1254,3 +1254,26 @@ a.tag-chip {
 .data-table tr:nth-child(even) td {
   background: color-mix(in srgb, var(--bg-panel) 45%, transparent);
 }
+
+.ctx-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

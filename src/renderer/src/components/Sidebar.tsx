@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent
+} from 'react'
 import { useStore } from '@/store'
 import {
   ancestorsOf,
@@ -293,6 +301,16 @@ export function Sidebar() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [creatingIn, setCreatingIn] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; node: TreeNode | null } | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useLayoutEffect(() => {
+    if (!menu || !menuRef.current) return
+    const rect = menuRef.current.getBoundingClientRect()
+    const pad = 8
+    const x = Math.max(pad, Math.min(menu.x, window.innerWidth - rect.width - pad))
+    const y = Math.max(pad, Math.min(menu.y, window.innerHeight - rect.height - pad))
+    if (x !== menu.x || y !== menu.y) setMenu({ ...menu, x, y })
+  }, [menu])
   const treeRef = useRef<HTMLDivElement>(null)
 
   const treeRoot = useMemo(
@@ -572,7 +590,7 @@ export function Sidebar() {
               />
             )}
             {treeRoot.children.length === 0 && (
-              <p className="muted small">No files match.</p>
+              <p className="muted small">{filter.trim() ? 'No files match.' : 'No files yet.'}</p>
             )}
             {treeRoot.children.map((child) => (
               <TreeRow
@@ -584,7 +602,7 @@ export function Sidebar() {
             ))}
           </div>
           {menu && (
-            <div className="ctx-menu" style={{ left: menu.x, top: menu.y }}>
+            <div className="ctx-menu" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
               {(!menuNode || !menuNode.isFile) && (
                 <button
                   type="button"
@@ -609,7 +627,8 @@ export function Sidebar() {
                         setMenu(null)
                       }}
                     >
-                      Rename
+                      <span>Rename</span>
+                      <span className="ctx-key">F2</span>
                     </button>
                     {menuNode.isFile && (
                       <button
@@ -635,7 +654,8 @@ export function Sidebar() {
                         setMenu(null)
                       }}
                     >
-                      Delete
+                      <span>Delete</span>
+                      <span className="ctx-key">Del</span>
                     </button>
                   </>
                 )

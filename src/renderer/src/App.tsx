@@ -14,12 +14,19 @@ export default function App() {
   const openNote = useStore((s) => s.openNote)
   const searchOpen = useStore((s) => s.searchOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
+  const root = useStore((s) => s.root)
+  const note = useStore((s) => s.note)
   const [dropHover, setDropHover] = useState(false)
   const dragDepth = useRef(0)
 
   useEffect(() => {
     void init()
   }, [init])
+
+  useEffect(() => {
+    const vault = root ? (root.split(/[\\/]/).filter(Boolean).pop() ?? root) : null
+    document.title = [note?.title, vault, 'Vault Viewer'].filter(Boolean).join(' — ')
+  }, [root, note])
 
   useEffect(() => {
     const onDragOver = (event: DragEvent): void => {
