@@ -5,6 +5,7 @@
 - [x] Hover preview popovers on wikilinks
 - [x] Pins rail
 - [x] Copy button on code blocks
+- [x] Windows "Open with" file association
 
 ## New suggested upgrades
 - [x] Editor: split live preview

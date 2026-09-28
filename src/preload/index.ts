@@ -62,7 +62,9 @@ const api = {
   onVaultChanged: (callback: (payload: VaultChange[]) => void): (() => void) =>
     subscribe('vault:changed', callback),
   onVaultOpened: (callback: (payload: OpenVaultResult) => void): (() => void) =>
-    subscribe('vault:opened', callback)
+    subscribe('vault:opened', callback),
+  onOpenFile: (callback: (absPath: string) => void): (() => void) =>
+    subscribe('file:open', callback)
 }
 
 export type VaultApi = typeof api

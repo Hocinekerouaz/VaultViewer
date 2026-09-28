@@ -31,6 +31,9 @@ const api = {
   onIndexProgress: vi.fn(),
   onVaultChanged: vi.fn(),
   onVaultOpened: vi.fn(),
+  onOpenFile: vi.fn(),
+  openVaultPath: vi.fn(),
+  openFolder: vi.fn(),
   getVaultState: vi.fn()
 }
 
@@ -100,6 +103,8 @@ beforeEach(() => {
     draft: null,
     conflict: null,
     pendingSwitch: null,
+    externalOpen: null,
+    pendingExternalFile: null,
     historyOpen: false,
     historyItems: [],
     historyView: null,
@@ -669,5 +674,72 @@ describe('file operations', () => {
     api.movePath.mockResolvedValue({ ok: false, error: 'An item with that name already exists' })
     expect(await useStore.getState().moveItem('b.md', '')).toBe(false)
     expect(useStore.getState().toast).toBe('An item with that name already exists')
+  })
+})
+
+describe('external file open', () => {
+  it('opens a supported file inside the vault directly', async () => {
+    api.readFile.mockResolvedValue(makeView('sub/note.md', '# n'))
+    await useStore.getState().openExternalFile('/vault/sub/note.md')
+    expect(useStore.getState().openPath).toBe('sub/note.md')
+    expect(useStore.getState().externalOpen).toBeNull()
+  })
+
+  it('prompts when the file is outside the vault', async () => {
+    await useStore.getState().openExternalFile('/other/note.md')
+    expect(useStore.getState().externalOpen).toEqual({
+      absPath: '/other/note.md',
+      dirty: false
+    })
+    expect(api.readFile).not.toHaveBeenCalled()
+  })
+
+  it('records unsaved changes in the prompt', async () => {
+    await enterDirtyEdit('raw', 'edited')
+    await useStore.getState().openExternalFile('/other/note.md')
+    expect(useStore.getState().externalOpen?.dirty).toBe(true)
+  })
+
+  it('toasts for unsupported extensions', async () => {
+    await useStore.getState().openExternalFile('C:\\pic.png')
+    expect(useStore.getState().toast).toBe("Vault Viewer can't display .png files")
+    expect(useStore.getState().externalOpen).toBeNull()
+  })
+
+  it('confirmExternalOpen switches vault and queues the file', async () => {
+    api.openVaultPath.mockResolvedValue(true)
+    useStore.setState({ externalOpen: { absPath: 'C:\\Other Vault\\n.md', dirty: false } })
+    await useStore.getState().confirmExternalOpen()
+    expect(api.openVaultPath).toHaveBeenCalledWith('C:\\Other Vault')
+    expect(useStore.getState().pendingExternalFile).toBe('C:\\Other Vault\\n.md')
+    expect(useStore.getState().externalOpen).toBeNull()
+  })
+
+  it('confirmExternalOpen clears the queue when the vault fails to open', async () => {
+    api.openVaultPath.mockResolvedValue(false)
+    useStore.setState({ externalOpen: { absPath: '/other/n.md', dirty: false } })
+    await useStore.getState().confirmExternalOpen()
+    expect(useStore.getState().pendingExternalFile).toBeNull()
+  })
+
+  it('cancelExternalOpen dismisses the prompt', () => {
+    useStore.setState({ externalOpen: { absPath: '/other/n.md', dirty: false } })
+    useStore.getState().cancelExternalOpen()
+    expect(useStore.getState().externalOpen).toBeNull()
+  })
+
+  it('drainPendingExternal opens the queued file relative to the new root', async () => {
+    api.readFile.mockResolvedValue(makeView('sub/n.md', '# n'))
+    useStore.setState({ pendingExternalFile: '/vault/sub/n.md' })
+    await useStore.getState().drainPendingExternal()
+    expect(useStore.getState().openPath).toBe('sub/n.md')
+    expect(useStore.getState().pendingExternalFile).toBeNull()
+  })
+
+  it('drainPendingExternal clears the queue when the file is not in the vault', async () => {
+    useStore.setState({ pendingExternalFile: '/elsewhere/n.md' })
+    await useStore.getState().drainPendingExternal()
+    expect(useStore.getState().pendingExternalFile).toBeNull()
+    expect(api.readFile).not.toHaveBeenCalled()
   })
 })

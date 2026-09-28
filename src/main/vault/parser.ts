@@ -1,7 +1,8 @@
 import matter from 'gray-matter'
 import { basename, extname } from 'node:path'
+import { SUPPORTED_EXTENSIONS } from '../../shared/constants'
 
-export const SUPPORTED_EXTENSIONS = ['.md', '.json', '.yaml', '.yml', '.csv', '.txt']
+export { SUPPORTED_EXTENSIONS }
 
 export function isSupported(name: string): boolean {
   return SUPPORTED_EXTENSIONS.includes(extname(name).toLowerCase())

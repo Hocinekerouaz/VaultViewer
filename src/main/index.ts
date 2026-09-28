@@ -1,10 +1,13 @@
 import { BrowserWindow, Menu, app, net, protocol, shell } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { appState } from './context'
-import { cleanupVault, openVaultByPath, openVaultFromMenu, registerIpc } from './ipc'
+import { registryCommands, runRegistry } from './fileAssoc'
+import { broadcastOpenFile, cleanupVault, openVaultByPath, openVaultFromMenu, registerIpc } from './ipc'
+import { extractLaunchTargets } from './launch'
+import { SUPPORTED_EXTENSIONS } from '../shared/constants'
 
 const mainDir = dirname(fileURLToPath(import.meta.url))
 
@@ -103,11 +106,22 @@ const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (appState.window) {
       if (appState.window.isMinimized()) appState.window.restore()
       appState.window.focus()
     }
+    const targets = extractLaunchTargets(argv, resolve(app.getAppPath()))
+    if (targets.file) broadcastOpenFile(targets.file)
+    else if (targets.dir) void openVaultByPath(targets.dir)
+  })
+
+  let queuedFile: string | null = null
+  app.on('open-file', (event, path) => {
+    event.preventDefault()
+    const abs = resolve(path)
+    if (appState.window) broadcastOpenFile(abs)
+    else queuedFile = abs
   })
 
   void app.whenReady().then(() => {
@@ -117,22 +131,26 @@ if (!gotLock) {
     buildMenu()
     createWindow()
 
+    const plan = registryCommands(
+      SUPPORTED_EXTENSIONS,
+      process.execPath,
+      app.isPackaged ? null : app.getAppPath()
+    )
+    const unregister = process.argv.includes('--unregister-file-assoc')
+    void runRegistry(unregister ? plan.remove : plan.add)
+
     const appPath = resolve(app.getAppPath())
-    const cliArg = process.argv
-      .slice(1)
-      .filter((arg) => !arg.startsWith('-'))
-      .find((arg) => {
-        const abs = resolve(arg)
-        if (abs === appPath) return false
-        try {
-          return statSync(abs).isDirectory()
-        } catch {
-          return false
-        }
-      })
-    if (cliArg) {
+    const targets = extractLaunchTargets(process.argv, appPath)
+    const targetFile = targets.file ?? queuedFile
+    queuedFile = null
+    if (targets.dir) {
       setTimeout(() => {
-        void openVaultByPath(resolve(cliArg))
+        void openVaultByPath(targets.dir as string)
+      }, 250)
+    }
+    if (targetFile) {
+      setTimeout(() => {
+        broadcastOpenFile(targetFile)
       }, 250)
     }
 

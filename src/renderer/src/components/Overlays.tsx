@@ -111,6 +111,60 @@ export function SwitchModal() {
   )
 }
 
+export function ExternalOpenModal() {
+  const external = useStore((s) => s.externalOpen)
+  const confirmExternalOpen = useStore((s) => s.confirmExternalOpen)
+  const cancelExternalOpen = useStore((s) => s.cancelExternalOpen)
+
+  if (!external) return null
+  const parts = external.absPath.split(/[\\/]/)
+  const name = parts[parts.length - 1] ?? external.absPath
+  const folder = parts[parts.length - 2] ?? ''
+
+  return (
+    <div
+      className="modal-overlay"
+      onClick={cancelExternalOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') cancelExternalOpen()
+      }}
+      role="presentation"
+    >
+      <div
+        className="modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Open file"
+      >
+        <div className="modal-title">
+          Open <code>{name}</code>?
+        </div>
+        <div className="muted small">
+          {folder ? `Its folder “${folder}” is` : 'Its folder is'} not the open vault. Switch to it
+          as your vault?
+        </div>
+        {external.dirty && (
+          <div className="muted small">Unsaved changes to the current note will be discarded.</div>
+        )}
+        <div className="modal-actions">
+          <button
+            type="button"
+            className="ghost-btn"
+            autoFocus
+            onClick={cancelExternalOpen}
+          >
+            Cancel
+          </button>
+          <button type="button" className="primary-btn" onClick={() => void confirmExternalOpen()}>
+            Switch &amp; open
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Toast() {
   const toast = useStore((s) => s.toast)
   if (!toast) return null

@@ -29,6 +29,10 @@ function broadcast(channel: string, payload: unknown): void {
   appState.window?.webContents.send(channel, payload)
 }
 
+export function broadcastOpenFile(absPath: string): void {
+  broadcast('file:open', absPath)
+}
+
 function sendProgress(progress: IndexProgress): void {
   broadcast('vault:progress', progress)
 }

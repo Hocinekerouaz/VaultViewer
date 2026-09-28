@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import { ancestorsOf, remapCollapsed } from '@/lib/tree'
+import { relFromRoot } from '@/lib/externalPath'
 import {
   applyScope,
   cycleScopeValue,
   pushSearchHistory,
   type SearchScope
 } from '@/lib/searchScope'
+import { SUPPORTED_EXTENSIONS } from '@shared/constants'
 import type {
   BacklinkItem,
   FileView,
@@ -64,6 +66,8 @@ interface StoreState {
   draft: string | null
   conflict: ConflictState
   pendingSwitch: PendingSwitch | null
+  externalOpen: { absPath: string; dirty: boolean } | null
+  pendingExternalFile: string | null
   historyOpen: boolean
   historyItems: SnapshotMeta[]
   historyView: FileView | null
@@ -86,8 +90,12 @@ interface StoreState {
   duplicateNote: (relPath: string) => Promise<string | null>
   moveItem: (relPath: string, destFolder: string) => Promise<boolean>
   init: () => Promise<void>
-  openVaultPath: (path: string) => Promise<void>
+  openVaultPath: (path: string) => Promise<boolean>
   openFolder: () => Promise<void>
+  openExternalFile: (absPath: string) => Promise<void>
+  confirmExternalOpen: () => Promise<void>
+  cancelExternalOpen: () => void
+  drainPendingExternal: () => Promise<void>
   openNote: (relPath: string, findTerm?: string | null) => Promise<void>
   setViewMode: (mode: ViewMode) => Promise<void>
   updateDraft: (text: string) => void
@@ -239,6 +247,7 @@ export const useStore = create<StoreState>((set, get) => {
     })
     const recents = await window.api.recentVaults()
     set({ recents })
+    if (get().pendingExternalFile) return
     const first = firstMarkdown(result.tree)
     if (first) await get().openNote(first)
   }
@@ -300,6 +309,8 @@ export const useStore = create<StoreState>((set, get) => {
     draft: null,
     conflict: null,
     pendingSwitch: null,
+    externalOpen: null,
+    pendingExternalFile: null,
     historyOpen: false,
     historyItems: [],
     historyView: null,
@@ -455,7 +466,13 @@ export const useStore = create<StoreState>((set, get) => {
         void get().handleChanged()
       })
       window.api.onVaultOpened((result) => {
-        void applyVault(result)
+        void (async () => {
+          await applyVault(result)
+          await get().drainPendingExternal()
+        })()
+      })
+      window.api.onOpenFile((absPath) => {
+        void get().openExternalFile(absPath)
       })
 
       const state = await window.api.getVaultState()
@@ -475,12 +492,56 @@ export const useStore = create<StoreState>((set, get) => {
 
     openVaultPath: async (path) => {
       const result = await window.api.openVaultPath(path)
-      if (!result) get().showToast('Could not open that folder')
+      if (!result) {
+        get().showToast('Could not open that folder')
+        return false
+      }
+      return true
     },
 
     openFolder: async () => {
       const result = await window.api.openFolder()
       if (!result) return
+    },
+
+    openExternalFile: async (absPath) => {
+      const dot = absPath.lastIndexOf('.')
+      const slash = Math.max(absPath.lastIndexOf('/'), absPath.lastIndexOf('\\'))
+      const ext = dot > slash ? absPath.slice(dot).toLowerCase() : ''
+      if (!SUPPORTED_EXTENSIONS.includes(ext)) {
+        get().showToast(`Vault Viewer can't display ${ext || 'those'} files`)
+        return
+      }
+      const { root } = get()
+      if (root) {
+        const rel = relFromRoot(root, absPath)
+        if (rel) {
+          await get().openNote(rel)
+          return
+        }
+      }
+      set({ externalOpen: { absPath, dirty: isDirty(get()) } })
+    },
+
+    confirmExternalOpen: async () => {
+      const pending = get().externalOpen
+      if (!pending) return
+      const slash = Math.max(pending.absPath.lastIndexOf('/'), pending.absPath.lastIndexOf('\\'))
+      const dir = pending.absPath.slice(0, slash)
+      set({ externalOpen: null, pendingExternalFile: pending.absPath })
+      const ok = await get().openVaultPath(dir)
+      if (!ok) set({ pendingExternalFile: null })
+    },
+
+    cancelExternalOpen: () => set({ externalOpen: null }),
+
+    drainPendingExternal: async () => {
+      const pending = get().pendingExternalFile
+      if (!pending) return
+      const { root } = get()
+      const rel = root ? relFromRoot(root, pending) : null
+      set({ pendingExternalFile: null })
+      if (rel) await get().openNote(rel)
     },
 
     openNote: async (relPath, findTerm) => {
