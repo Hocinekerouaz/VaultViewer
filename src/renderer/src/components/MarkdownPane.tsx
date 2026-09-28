@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useDeferredValue, useEffect, useRef } from 'react'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PaneToolbar } from './PaneToolbar'
 import { EditorPane } from './EditorPane'
 import { RenderedBody } from './RenderedBody'
+import { draftView } from '@/lib/draftPreview'
 import { useStore } from '@/store'
 
 export function MarkdownPane() {
@@ -13,7 +14,11 @@ export function MarkdownPane() {
   const clickTag = useStore((s) => s.clickTag)
   const pendingFind = useStore((s) => s.pendingFind)
   const viewMode = useStore((s) => s.viewMode)
+  const draft = useStore((s) => s.draft)
+  const openPath = useStore((s) => s.openPath)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const deferredDraft = useDeferredValue(draft)
 
   useEffect(() => {
     if (!pendingFind) return
@@ -28,6 +33,48 @@ export function MarkdownPane() {
     }, 80)
     return () => clearTimeout(timer)
   }, [pendingFind, note])
+
+  useEffect(() => {
+    if (viewMode !== 'edit') return
+    const scroller = document.querySelector<HTMLElement>('.editor-split .cm-scroller')
+    const preview = previewRef.current
+    if (!scroller || !preview) return
+    let lock: 'source' | 'preview' | null = null
+    const ratioOf = (el: HTMLElement): number => {
+      const max = el.scrollHeight - el.clientHeight
+      return max > 0 ? el.scrollTop / max : 0
+    }
+    const fromSource = (): void => {
+      if (lock === 'preview') {
+        lock = null
+        return
+      }
+      const max = preview.scrollHeight - preview.clientHeight
+      if (max <= 0) return
+      const next = ratioOf(scroller) * max
+      if (Math.abs(next - preview.scrollTop) < 2) return
+      lock = 'source'
+      preview.scrollTop = next
+    }
+    const fromPreview = (): void => {
+      if (lock === 'source') {
+        lock = null
+        return
+      }
+      const max = scroller.scrollHeight - scroller.clientHeight
+      if (max <= 0) return
+      const next = ratioOf(preview) * max
+      if (Math.abs(next - scroller.scrollTop) < 2) return
+      lock = 'preview'
+      scroller.scrollTop = next
+    }
+    scroller.addEventListener('scroll', fromSource, { passive: true })
+    preview.addEventListener('scroll', fromPreview, { passive: true })
+    return () => {
+      scroller.removeEventListener('scroll', fromSource)
+      preview.removeEventListener('scroll', fromPreview)
+    }
+  }, [viewMode, openPath])
 
   if (!root) {
     return (
@@ -51,11 +98,23 @@ export function MarkdownPane() {
     )
   }
 
+  const previewView = draft !== null ? draftView(note, deferredDraft ?? draft) : note
+
   return (
-    <div className="reading" ref={bodyRef}>
+    <div className={`reading ${viewMode === 'edit' ? 'editing' : ''}`} ref={bodyRef}>
       <PaneToolbar />
       {viewMode === 'edit' ? (
-        <EditorPane />
+        <div className="editor-split">
+          <EditorPane />
+          <div className="editor-preview" ref={previewRef}>
+            <RenderedBody
+              view={previewView}
+              linkMap={linkMap}
+              onWiki={clickWiki}
+              onTag={(tag) => void clickTag(tag)}
+            />
+          </div>
+        </div>
       ) : (
         <>
           <FrontmatterPanel note={note} onTagClick={(tag) => void clickTag(tag)} />

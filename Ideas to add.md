@@ -7,7 +7,7 @@
 - [x] Copy button on code blocks
 
 ## New suggested upgrades
-- [ ] Editor: split live preview
+- [x] Editor: split live preview
 - [ ] Search: scoped, cyclable, historical
 - [ ] File ops: New note + drag-to-move + duplicate
       (new note opens a settings dialog: file format .md / .txt / ...)

@@ -19,7 +19,12 @@ function languageFor(path: string): Extension {
 }
 
 const editorTheme = EditorView.theme({
-  '&': { color: 'var(--text)', backgroundColor: 'var(--bg-elevated)', fontSize: '13px' },
+  '&': {
+    color: 'var(--text)',
+    backgroundColor: 'var(--bg-elevated)',
+    fontSize: '13px',
+    height: '100%'
+  },
   '.cm-content': {
     fontFamily: 'var(--font-mono)',
     caretColor: 'var(--accent)',
