@@ -3,7 +3,9 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { FrontmatterPanel } from './FrontmatterPanel'
+import { DataView } from './DataView'
 import { rehypeVaultAssets, remarkVaultLinks } from '@/lib/markdownPlugins'
+import { dataKindOf } from '@/lib/dataParse'
 import { useStore } from '@/store'
 
 export function MarkdownPane() {
@@ -123,6 +125,8 @@ export function MarkdownPane() {
             {note.body}
           </ReactMarkdown>
         </article>
+      ) : dataKindOf(note.path) ? (
+        <DataView note={note} />
       ) : (
         <pre className="raw-view">{note.body}</pre>
       )}

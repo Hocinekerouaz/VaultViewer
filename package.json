@@ -17,6 +17,7 @@
     "chokidar": "latest",
     "gray-matter": "latest",
     "highlight.js": "latest",
+    "js-yaml": "^4.1.0",
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "latest",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@electron/rebuild": "latest",
     "@types/better-sqlite3": "latest",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
