@@ -1,10 +1,11 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import { DataView } from './DataView'
 import { rehypeVaultAssets, remarkVaultLinks } from '@/lib/markdownPlugins'
 import { dataKindOf } from '@/lib/dataParse'
+import { resolveCopyText } from '@/lib/codeCopy'
 import type { FileView, LinkMap } from '@shared/types'
 
 interface RenderedBodyProps {
@@ -12,6 +13,47 @@ interface RenderedBodyProps {
   linkMap?: LinkMap
   onWiki?: (target: string) => void
   onTag?: (tag: string) => void
+}
+
+function CodeBlock({ fallback, ...props }: ComponentPropsWithoutRef<'pre'> & { fallback: string }) {
+  const [copied, setCopied] = useState(false)
+  const selectionRef = useRef('')
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    []
+  )
+
+  return (
+    <div className="code-block">
+      <button
+        type="button"
+        className={`code-copy ${copied ? 'copied' : ''}`}
+        onMouseDown={() => {
+          selectionRef.current = window.getSelection()?.toString() ?? ''
+        }}
+        onClick={() => {
+          const live = window.getSelection()?.toString() ?? ''
+          const text = resolveCopyText(selectionRef.current || live, fallback)
+          selectionRef.current = ''
+          void navigator.clipboard
+            .writeText(text)
+            .then(() => {
+              setCopied(true)
+              if (timerRef.current) clearTimeout(timerRef.current)
+              timerRef.current = setTimeout(() => setCopied(false), 1500)
+            })
+            .catch(() => undefined)
+        }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+      <pre {...props} />
+    </div>
+  )
 }
 
 export function RenderedBody({ view, linkMap, onWiki, onTag }: RenderedBodyProps) {
@@ -37,6 +79,7 @@ export function RenderedBody({ view, linkMap, onWiki, onTag }: RenderedBodyProps
             [rehypeVaultAssets, view.path]
           ]}
           components={{
+            pre: (props) => <CodeBlock {...props} fallback={view.raw} />,
             a: (props) => {
               const href = props.href ?? ''
               if (href.startsWith('vaultlink:')) {

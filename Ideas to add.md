@@ -4,7 +4,7 @@
 - [x] Local version history ("time machine")
 - [x] Hover preview popovers on wikilinks
 - [x] Pins rail
-- [ ] Copy button on code blocks
+- [x] Copy button on code blocks
 
 ## New suggested upgrades
 - [ ] Editor: split live preview
