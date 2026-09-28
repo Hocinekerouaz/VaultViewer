@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3'
-import type { BacklinkItem, OutgoingItem, SearchHit } from '../../shared/types'
+import type { BacklinkItem, OutgoingItem, SearchHit, SnapshotMeta } from '../../shared/types'
 import type { ResolveNote } from '../vault/resolve'
 
 export interface EdgeRow {
@@ -173,4 +173,65 @@ export function getOutgoing(db: Database, noteId: number): OutgoingItem[] {
     else if (!existing.path && row.path) byTarget.set(row.target, row)
   }
   return [...byTarget.values()].sort((a, b) => a.target.localeCompare(b.target))
+}
+
+export function getNoteContent(db: Database, relPath: string): string | null {
+  const row = db.prepare('SELECT content FROM notes WHERE rel_path = ?').get(relPath) as
+    | { content: string }
+    | undefined
+  return row ? row.content : null
+}
+
+export function insertSnapshot(
+  db: Database,
+  relPath: string,
+  content: string,
+  source: string,
+  createdAt: number
+): void {
+  db.prepare('INSERT INTO snapshots (rel_path, content, source, created_at) VALUES (?, ?, ?, ?)').run(
+    relPath,
+    content,
+    source,
+    createdAt
+  )
+}
+
+export function getLatestSnapshotContent(db: Database, relPath: string): string | null {
+  const row = db
+    .prepare('SELECT content FROM snapshots WHERE rel_path = ? ORDER BY id DESC LIMIT 1')
+    .get(relPath) as { content: string } | undefined
+  return row ? row.content : null
+}
+
+export function listSnapshots(db: Database, relPath: string): SnapshotMeta[] {
+  const rows = db
+    .prepare(
+      `SELECT id, rel_path AS relPath, source, created_at AS createdAt, LENGTH(content) AS size
+       FROM snapshots
+       WHERE rel_path = ?
+       ORDER BY id DESC`
+    )
+    .all(relPath) as SnapshotMeta[]
+  return rows
+}
+
+export function getSnapshot(
+  db: Database,
+  id: number
+): { relPath: string; content: string } | null {
+  const row = db.prepare('SELECT rel_path AS relPath, content FROM snapshots WHERE id = ?').get(id) as
+    | { relPath: string; content: string }
+    | undefined
+  return row ?? null
+}
+
+export function pruneSnapshots(db: Database, relPath: string, keep: number): void {
+  db.prepare(
+    `DELETE FROM snapshots
+     WHERE rel_path = ?
+       AND id NOT IN (
+         SELECT id FROM snapshots WHERE rel_path = ? ORDER BY id DESC LIMIT ?
+       )`
+  ).run(relPath, relPath, keep)
 }

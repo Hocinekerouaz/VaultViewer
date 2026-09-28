@@ -1,0 +1,91 @@
+import { useMemo } from 'react'
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import rehypeHighlight from 'rehype-highlight'
+import { DataView } from './DataView'
+import { rehypeVaultAssets, remarkVaultLinks } from '@/lib/markdownPlugins'
+import { dataKindOf } from '@/lib/dataParse'
+import type { FileView, LinkMap } from '@shared/types'
+
+interface RenderedBodyProps {
+  view: FileView
+  linkMap?: LinkMap
+  onWiki?: (target: string) => void
+  onTag?: (tag: string) => void
+}
+
+export function RenderedBody({ view, linkMap, onWiki, onTag }: RenderedBodyProps) {
+  const remarkPlugins = useMemo(() => [remarkGfm, remarkVaultLinks], [])
+  const missing = new Set(
+    Object.entries(linkMap ?? {})
+      .filter(([, outcome]) => outcome.status === 'missing')
+      .map(([target]) => target)
+  )
+
+  if (view.kind === 'markdown') {
+    return (
+      <article className="note-body">
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          urlTransform={(url, key) => {
+            if (key === 'href' && /^(vaultlink:|vaulttag:)/.test(url)) return url
+            if (key === 'src' && url.startsWith('vault-asset:')) return url
+            return defaultUrlTransform(url)
+          }}
+          rehypePlugins={[
+            [rehypeHighlight, { detect: true, ignoreMissing: true }],
+            [rehypeVaultAssets, view.path]
+          ]}
+          components={{
+            a: (props) => {
+              const href = props.href ?? ''
+              if (href.startsWith('vaultlink:')) {
+                const target = decodeURIComponent(href.slice('vaultlink:'.length))
+                const isMissing = missing.has(target)
+                return (
+                  <a
+                    href="#"
+                    className={`wikilink ${isMissing ? 'wikilink-missing' : ''}`}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      onWiki?.(target)
+                    }}
+                  >
+                    {props.children}
+                  </a>
+                )
+              }
+              if (href.startsWith('vaulttag:')) {
+                const tag = decodeURIComponent(href.slice('vaulttag:'.length))
+                return (
+                  <a
+                    href="#"
+                    className="tag-chip"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      onTag?.(tag)
+                    }}
+                  >
+                    {props.children}
+                  </a>
+                )
+              }
+              if (/^https?:/i.test(href)) {
+                return (
+                  <a href={href} target="_blank" rel="noreferrer">
+                    {props.children}
+                  </a>
+                )
+              }
+              return <a {...props} />
+            }
+          }}
+        >
+          {view.body}
+        </ReactMarkdown>
+      </article>
+    )
+  }
+  if (dataKindOf(view.path)) return <DataView note={view} />
+  return <pre className="raw-view">{view.body}</pre>
+}

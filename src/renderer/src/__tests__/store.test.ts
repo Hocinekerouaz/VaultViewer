@@ -23,6 +23,8 @@ const api = {
   recentVaults: vi.fn(),
   search: vi.fn(),
   searchTag: vi.fn(),
+  historyList: vi.fn(),
+  historyView: vi.fn(),
   onIndexProgress: vi.fn(),
   onVaultChanged: vi.fn(),
   onVaultOpened: vi.fn(),
@@ -51,6 +53,8 @@ beforeEach(() => {
   api.resolveNoteLinks.mockResolvedValue({})
   api.getTree.mockResolvedValue({ tree: ['a.md', 'b.md'], folders: [] })
   api.recentVaults.mockResolvedValue([])
+  api.historyList.mockResolvedValue([])
+  api.historyView.mockResolvedValue(null)
   useStore.setState({
     root: '/vault',
     tree: ['a.md', 'b.md'],
@@ -71,7 +75,11 @@ beforeEach(() => {
     viewMode: 'read',
     draft: null,
     conflict: null,
-    pendingSwitch: null
+    pendingSwitch: null,
+    historyOpen: false,
+    historyItems: [],
+    historyView: null,
+    historySelected: null
   })
 })
 
@@ -338,5 +346,114 @@ describe('conflict actions', () => {
     expect(useStore.getState().draft).toBeNull()
     expect(useStore.getState().conflict).toBeNull()
     expect(useStore.getState().toast).toBe('The open file was removed')
+  })
+})
+
+describe('history', () => {
+  const snapshot = (id: number) => ({
+    id,
+    relPath: 'a.md',
+    source: 'change' as const,
+    createdAt: 1000 + id,
+    size: 9
+  })
+
+  it('opens the overlay and loads snapshot metadata', async () => {
+    await seedOpen('a.md', '# hi')
+    api.historyList.mockResolvedValue([snapshot(7), snapshot(5)])
+    await useStore.getState().openHistory()
+    expect(api.historyList).toHaveBeenCalledWith('a.md')
+    expect(useStore.getState().historyOpen).toBe(true)
+    expect(useStore.getState().historyItems).toHaveLength(2)
+    expect(useStore.getState().historyView).toBeNull()
+    expect(useStore.getState().historySelected).toBeNull()
+  })
+
+  it('does nothing without an open file', async () => {
+    await useStore.getState().openHistory()
+    expect(api.historyList).not.toHaveBeenCalled()
+    expect(useStore.getState().historyOpen).toBe(false)
+  })
+
+  it('loads the snapshot view on select and closes cleanly', async () => {
+    await seedOpen('a.md', '# hi')
+    api.historyList.mockResolvedValue([snapshot(7)])
+    await useStore.getState().openHistory()
+    api.historyView.mockResolvedValue(makeView('a.md', '# older'))
+    await useStore.getState().selectHistory(7)
+    expect(useStore.getState().historySelected).toBe(7)
+    expect(useStore.getState().historyView?.raw).toBe('# older')
+    useStore.getState().closeHistory()
+    expect(useStore.getState().historyOpen).toBe(false)
+    expect(useStore.getState().historyItems).toHaveLength(0)
+    expect(useStore.getState().historyView).toBeNull()
+  })
+
+  it('toasts when a snapshot view cannot be loaded', async () => {
+    await seedOpen('a.md', '# hi')
+    await useStore.getState().selectHistory(7)
+    expect(useStore.getState().historyView).toBeNull()
+    expect(useStore.getState().toast).toBe('Could not load that version')
+  })
+
+  it('restores a snapshot when clean', async () => {
+    await seedOpen('a.md', '# hi')
+    api.historyList.mockResolvedValue([snapshot(7)])
+    await useStore.getState().openHistory()
+    api.historyView.mockResolvedValue(makeView('a.md', '# older'))
+    await useStore.getState().selectHistory(7)
+    api.writeFile.mockResolvedValue({ ok: true, path: 'a.md', view: makeView('a.md', '# older') })
+    await useStore.getState().restoreHistory()
+    expect(api.writeFile).toHaveBeenCalledWith('a.md', '# older')
+    expect(useStore.getState().note?.raw).toBe('# older')
+    expect(useStore.getState().historyOpen).toBe(false)
+    expect(useStore.getState().toast).toBe('Version restored')
+  })
+
+  it('blocks restore while the editor is dirty', async () => {
+    await enterDirtyEdit('# a', '# a\nedits')
+    api.historyList.mockResolvedValue([snapshot(7)])
+    await useStore.getState().openHistory()
+    api.historyView.mockResolvedValue(makeView('a.md', '# older'))
+    await useStore.getState().selectHistory(7)
+    api.writeFile.mockClear()
+    await useStore.getState().restoreHistory()
+    expect(api.writeFile).not.toHaveBeenCalled()
+    expect(useStore.getState().note?.raw).toBe('# a')
+    expect(useStore.getState().draft).toBe('# a\nedits')
+    expect(useStore.getState().historyOpen).toBe(true)
+    expect(useStore.getState().toast).toBe('Save or revert your changes first')
+  })
+
+  it('keeps edit mode in sync after a restore', async () => {
+    await seedOpen('a.md', '# hi')
+    await useStore.getState().setViewMode('edit')
+    api.historyList.mockResolvedValue([snapshot(7)])
+    await useStore.getState().openHistory()
+    api.historyView.mockResolvedValue(makeView('a.md', '# older'))
+    await useStore.getState().selectHistory(7)
+    api.writeFile.mockResolvedValue({ ok: true, path: 'a.md', view: makeView('a.md', '# older') })
+    await useStore.getState().restoreHistory()
+    expect(useStore.getState().viewMode).toBe('edit')
+    expect(useStore.getState().draft).toBe('# older')
+    expect(isDirty(useStore.getState())).toBe(false)
+  })
+
+  it('does nothing without a selected snapshot', async () => {
+    await seedOpen('a.md', '# hi')
+    await useStore.getState().restoreHistory()
+    expect(api.writeFile).not.toHaveBeenCalled()
+  })
+
+  it('reports write failures and keeps the overlay open', async () => {
+    await seedOpen('a.md', '# hi')
+    api.historyList.mockResolvedValue([snapshot(7)])
+    await useStore.getState().openHistory()
+    api.historyView.mockResolvedValue(makeView('a.md', '# older'))
+    await useStore.getState().selectHistory(7)
+    api.writeFile.mockResolvedValue({ ok: false, error: 'Could not save the file' })
+    await useStore.getState().restoreHistory()
+    expect(useStore.getState().historyOpen).toBe(true)
+    expect(useStore.getState().toast).toBe('Could not save the file')
   })
 })

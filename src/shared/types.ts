@@ -74,3 +74,11 @@ export interface VaultState {
   root: string | null
   ready: boolean
 }
+
+export interface SnapshotMeta {
+  id: number
+  relPath: string
+  source: 'change' | 'delete'
+  createdAt: number
+  size: number
+}

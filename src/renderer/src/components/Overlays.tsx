@@ -1,4 +1,17 @@
 import { useStore } from '@/store'
+import { RenderedBody } from './RenderedBody'
+
+function formatWhen(createdAt: number): string {
+  const date = new Date(createdAt)
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (date.toDateString() === new Date().toDateString()) return `Today ${time}`
+  return `${date.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`
+}
+
+function formatSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  return `${(size / 1024).toFixed(1)} KB`
+}
 
 export function AmbiguityPicker() {
   const pendingWiki = useStore((s) => s.pendingWiki)
@@ -102,4 +115,92 @@ export function Toast() {
   const toast = useStore((s) => s.toast)
   if (!toast) return null
   return <div className="toast">{toast}</div>
+}
+
+export function HistoryOverlay() {
+  const open = useStore((s) => s.historyOpen)
+  const items = useStore((s) => s.historyItems)
+  const selected = useStore((s) => s.historySelected)
+  const historyView = useStore((s) => s.historyView)
+  const note = useStore((s) => s.note)
+  const openPath = useStore((s) => s.openPath)
+  const closeHistory = useStore((s) => s.closeHistory)
+  const selectHistory = useStore((s) => s.selectHistory)
+  const restoreHistory = useStore((s) => s.restoreHistory)
+
+  if (!open) return null
+  const name = (openPath ?? '').split('/').pop() ?? openPath ?? ''
+  const preview = selected !== null ? historyView : note
+  const selectedMeta = selected !== null ? items.find((item) => item.id === selected) : undefined
+  const previewLabel =
+    selected === null ? 'Current version' : `Version from ${formatWhen(selectedMeta?.createdAt ?? 0)}`
+
+  return (
+    <div
+      className="modal-overlay"
+      onClick={closeHistory}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') closeHistory()
+      }}
+      role="presentation"
+    >
+      <div
+        className="modal history-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Version history"
+      >
+        <div className="modal-title">
+          Version history for <code>{name}</code>
+        </div>
+        <div className="history-layout">
+          <ul className="history-list">
+            {items.length === 0 && (
+              <li className="history-empty">No earlier versions yet for this file.</li>
+            )}
+            {items.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  className={`modal-option history-item${selected === item.id ? ' is-selected' : ''}`}
+                  aria-pressed={selected === item.id}
+                  onClick={() => void selectHistory(item.id)}
+                >
+                  <span className="history-when">{formatWhen(item.createdAt)}</span>
+                  <span className="history-meta">
+                    {formatSize(item.size)}
+                    {item.source === 'delete' && <span className="history-badge">deleted</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="history-preview">
+            <div className="history-preview-label">{previewLabel}</div>
+            <div className="history-preview-body">
+              {preview ? (
+                <RenderedBody view={preview} />
+              ) : (
+                <p className="muted">Select a version to preview it.</p>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="ghost-btn" onClick={closeHistory}>
+            Close
+          </button>
+          <button
+            type="button"
+            className="primary-btn"
+            disabled={selected === null || !historyView}
+            onClick={() => void restoreHistory()}
+          >
+            Restore this version
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }

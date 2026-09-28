@@ -56,6 +56,16 @@ export function openDatabase(dbPath: string): DatabaseType {
       INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES ('delete', old.id, old.title, old.content);
       INSERT INTO notes_fts(rowid, title, content) VALUES (new.id, new.title, new.content);
     END;
+
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id INTEGER PRIMARY KEY,
+      rel_path TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'change',
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_path ON snapshots(rel_path, id);
   `)
   return db
 }

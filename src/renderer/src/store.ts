@@ -9,7 +9,8 @@ import type {
   OutgoingItem,
   RecentVault,
   ResolveOutcome,
-  SearchHit
+  SearchHit,
+  SnapshotMeta
 } from '@shared/types'
 
 type Theme = 'light' | 'dark'
@@ -53,6 +54,10 @@ interface StoreState {
   draft: string | null
   conflict: ConflictState
   pendingSwitch: PendingSwitch | null
+  historyOpen: boolean
+  historyItems: SnapshotMeta[]
+  historyView: FileView | null
+  historySelected: number | null
   setFilter: (value: string) => void
   setQuery: (value: string) => void
   setTheme: (value: Theme) => void
@@ -78,6 +83,10 @@ interface StoreState {
   reloadFromDisk: () => void
   keepEditing: () => void
   closeDeletedFile: () => void
+  openHistory: () => Promise<void>
+  selectHistory: (id: number) => Promise<void>
+  restoreHistory: () => Promise<void>
+  closeHistory: () => void
   runSearch: () => Promise<void>
   clearSearch: () => void
   clickWiki: (target: string) => void
@@ -127,6 +136,10 @@ export const useStore = create<StoreState>((set, get) => {
       draft: null,
       conflict: null,
       pendingSwitch: null,
+      historyOpen: false,
+      historyItems: [],
+      historyView: null,
+      historySelected: null,
       progress: { phase: 'indexing', indexed: 0, total: result.tree.length }
     })
     const recents = await window.api.recentVaults()
@@ -188,6 +201,10 @@ export const useStore = create<StoreState>((set, get) => {
     draft: null,
     conflict: null,
     pendingSwitch: null,
+    historyOpen: false,
+    historyItems: [],
+    historyView: null,
+    historySelected: null,
 
     setFilter: (value) => set({ filter: value }),
     setQuery: (value) => set({ query: value }),
@@ -422,10 +439,58 @@ export const useStore = create<StoreState>((set, get) => {
         backlinks: [],
         outgoing: [],
         linkMap: {},
-        selectedPath: null
+        selectedPath: null,
+        historyOpen: false,
+        historyItems: [],
+        historyView: null,
+        historySelected: null
       })
       get().showToast('The open file was removed')
     },
+
+    openHistory: async () => {
+      const { openPath } = get()
+      if (!openPath) return
+      const items = await window.api.historyList(openPath)
+      set({ historyOpen: true, historyItems: items, historyView: null, historySelected: null })
+    },
+
+    selectHistory: async (id) => {
+      const view = await window.api.historyView(id)
+      if (!view) {
+        get().showToast('Could not load that version')
+        return
+      }
+      set({ historySelected: id, historyView: view })
+    },
+
+    restoreHistory: async () => {
+      const { openPath, historyView, root, viewMode } = get()
+      if (!root || !openPath || !historyView) return
+      if (isDirty(get())) {
+        get().showToast('Save or revert your changes first')
+        return
+      }
+      const res = await window.api.writeFile(openPath, historyView.raw)
+      if (!res.ok || !res.view) {
+        get().showToast(res.error ?? 'Could not restore that version')
+        return
+      }
+      set({
+        note: res.view,
+        draft: viewMode === 'edit' ? res.view.raw : null,
+        conflict: null,
+        historyOpen: false,
+        historyItems: [],
+        historyView: null,
+        historySelected: null
+      })
+      await get().refreshNoteMeta()
+      get().showToast('Version restored')
+    },
+
+    closeHistory: () =>
+      set({ historyOpen: false, historyView: null, historySelected: null, historyItems: [] }),
 
     refreshNoteMeta: async () => {
       const { openPath } = get()

@@ -1,13 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react'
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeHighlight from 'rehype-highlight'
+import { useEffect, useRef } from 'react'
 import { FrontmatterPanel } from './FrontmatterPanel'
-import { DataView } from './DataView'
 import { PaneToolbar } from './PaneToolbar'
 import { EditorPane } from './EditorPane'
-import { rehypeVaultAssets, remarkVaultLinks } from '@/lib/markdownPlugins'
-import { dataKindOf } from '@/lib/dataParse'
+import { RenderedBody } from './RenderedBody'
 import { useStore } from '@/store'
 
 export function MarkdownPane() {
@@ -34,8 +29,6 @@ export function MarkdownPane() {
     return () => clearTimeout(timer)
   }, [pendingFind, note])
 
-  const remarkPlugins = useMemo(() => [remarkGfm, remarkVaultLinks], [])
-
   if (!root) {
     return (
       <div className="empty-state">
@@ -58,12 +51,6 @@ export function MarkdownPane() {
     )
   }
 
-  const missing = new Set(
-    Object.entries(linkMap)
-      .filter(([, outcome]) => outcome.status === 'missing')
-      .map(([target]) => target)
-  )
-
   return (
     <div className="reading" ref={bodyRef}>
       <PaneToolbar />
@@ -72,72 +59,12 @@ export function MarkdownPane() {
       ) : (
         <>
           <FrontmatterPanel note={note} onTagClick={(tag) => void clickTag(tag)} />
-          {note.kind === 'markdown' ? (
-            <article className="note-body">
-              <ReactMarkdown
-                remarkPlugins={remarkPlugins}
-                urlTransform={(url, key) => {
-                  if (key === 'href' && /^(vaultlink:|vaulttag:)/.test(url)) return url
-                  if (key === 'src' && url.startsWith('vault-asset:')) return url
-                  return defaultUrlTransform(url)
-                }}
-                rehypePlugins={[
-                  [rehypeHighlight, { detect: true, ignoreMissing: true }],
-                  [rehypeVaultAssets, note.path]
-                ]}
-                components={{
-                  a: (props) => {
-                    const href = props.href ?? ''
-                    if (href.startsWith('vaultlink:')) {
-                      const target = decodeURIComponent(href.slice('vaultlink:'.length))
-                      const isMissing = missing.has(target)
-                      return (
-                        <a
-                          href="#"
-                          className={`wikilink ${isMissing ? 'wikilink-missing' : ''}`}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            clickWiki(target)
-                          }}
-                        >
-                          {props.children}
-                        </a>
-                      )
-                    }
-                    if (href.startsWith('vaulttag:')) {
-                      const tag = decodeURIComponent(href.slice('vaulttag:'.length))
-                      return (
-                        <a
-                          href="#"
-                          className="tag-chip"
-                          onClick={(event) => {
-                            event.preventDefault()
-                            void clickTag(tag)
-                          }}
-                        >
-                          {props.children}
-                        </a>
-                      )
-                    }
-                    if (/^https?:/i.test(href)) {
-                      return (
-                        <a href={href} target="_blank" rel="noreferrer">
-                          {props.children}
-                        </a>
-                      )
-                    }
-                    return <a {...props} />
-                  }
-                }}
-              >
-                {note.body}
-              </ReactMarkdown>
-            </article>
-          ) : dataKindOf(note.path) ? (
-            <DataView note={note} />
-          ) : (
-            <pre className="raw-view">{note.body}</pre>
-          )}
+          <RenderedBody
+            view={note}
+            linkMap={linkMap}
+            onWiki={clickWiki}
+            onTag={(tag) => void clickTag(tag)}
+          />
         </>
       )}
     </div>

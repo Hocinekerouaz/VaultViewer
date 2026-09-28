@@ -4,7 +4,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { Breadcrumbs } from '@/components/Breadcrumbs'
 import { MarkdownPane } from '@/components/MarkdownPane'
 import { BacklinksPanel } from '@/components/BacklinksPanel'
-import { AmbiguityPicker, SwitchModal, Toast } from '@/components/Overlays'
+import { AmbiguityPicker, HistoryOverlay, SwitchModal, Toast } from '@/components/Overlays'
 import { isInternalNoteDrag, NOTE_DRAG_TYPE } from '@/lib/tree'
 import { useStore } from '@/store'
 
@@ -101,6 +101,7 @@ export default function App() {
       </div>
       <AmbiguityPicker />
       <SwitchModal />
+      <HistoryOverlay />
       <Toast />
     </div>
   )

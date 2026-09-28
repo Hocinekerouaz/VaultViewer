@@ -12,6 +12,7 @@ export function PaneToolbar() {
   const reloadFromDisk = useStore((s) => s.reloadFromDisk)
   const keepEditing = useStore((s) => s.keepEditing)
   const closeDeletedFile = useStore((s) => s.closeDeletedFile)
+  const openHistory = useStore((s) => s.openHistory)
   const [confirmRevert, setConfirmRevert] = useState(false)
 
   useEffect(() => {
@@ -52,34 +53,44 @@ export function PaneToolbar() {
             Edit
           </button>
         </div>
-        {viewMode === 'edit' && (
-          <div className="pane-tools">
-            <span className="pane-file" title={note.path}>
-              {note.path}
-            </span>
-            {dirty && (
-              <span className="dirty-dot" title="Unsaved changes">
-                ●
+        <div className="pane-tools">
+          {viewMode === 'edit' && (
+            <>
+              <span className="pane-file" title={note.path}>
+                {note.path}
               </span>
-            )}
-            <button
-              type="button"
-              className="primary-btn"
-              disabled={!dirty}
-              onClick={() => void saveDraft()}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className={confirmRevert ? 'ghost-btn danger' : 'ghost-btn'}
-              disabled={!dirty}
-              onClick={onRevert}
-            >
-              {confirmRevert ? 'Discard changes?' : 'Revert'}
-            </button>
-          </div>
-        )}
+              {dirty && (
+                <span className="dirty-dot" title="Unsaved changes">
+                  ●
+                </span>
+              )}
+              <button
+                type="button"
+                className="primary-btn"
+                disabled={!dirty}
+                onClick={() => void saveDraft()}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className={confirmRevert ? 'ghost-btn danger' : 'ghost-btn'}
+                disabled={!dirty}
+                onClick={onRevert}
+              >
+                {confirmRevert ? 'Discard changes?' : 'Revert'}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="ghost-btn"
+            title="Version history"
+            onClick={() => void openHistory()}
+          >
+            History
+          </button>
+        </div>
       </div>
       {conflict && (
         <div className="conflict-banner" role="alert">

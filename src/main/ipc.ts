@@ -2,12 +2,14 @@ import { dialog, ipcMain, shell } from 'electron'
 import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type {
+  FileView,
   IndexProgress,
   LinkMap,
   OpResult,
   OpenVaultResult,
   RecentVault,
   SaveResult,
+  SnapshotMeta,
   VaultChange,
   VaultState
 } from '../shared/types'
@@ -18,6 +20,7 @@ import * as queries from './db/queries'
 import { parseFile } from './vault/parser'
 import { resolveTarget, type ResolveNote } from './vault/resolve'
 import { createFolder, renamePath, writeNote } from './vault/ops'
+import { captureChange, captureDelete } from './vault/history'
 import { scanVault } from './vault/scanner'
 import { startWatcher } from './vault/watcher'
 import { VaultIndex } from './vault/indexer'
@@ -55,10 +58,16 @@ async function openVault(root: string): Promise<OpenVaultResult | null> {
 
   appState.stopWatcher = startWatcher(root, (changes: VaultChange[]) => {
     void index.enqueue(async () => {
+      const db = index.getDb()
       for (const change of changes) {
         if (change.type === 'dir') continue
-        if (change.type === 'unlink') index.removeFile(change.relPath)
-        else index.updateFile(change.relPath)
+        if (change.type === 'unlink') {
+          captureDelete(db, change.relPath)
+          index.removeFile(change.relPath)
+        } else {
+          if (change.type === 'change') captureChange(root, db, change.relPath)
+          index.updateFile(change.relPath)
+        }
       }
       broadcast('vault:changed', changes)
     })
@@ -99,6 +108,20 @@ export function openVaultFromMenu(): void {
   void openVaultDialog()
 }
 
+function viewFromRaw(relPath: string, raw: string): FileView {
+  const parsed = parseFile(relPath, raw)
+  const isMarkdown = relPath.toLowerCase().endsWith('.md')
+  return {
+    kind: isMarkdown ? ('markdown' as const) : ('text' as const),
+    path: relPath,
+    title: parsed.title,
+    tags: parsed.tags,
+    frontmatter: parsed.frontmatter,
+    body: parsed.body,
+    raw
+  }
+}
+
 function readFileView(relPath: string) {
   const root = appState.root
   if (!root) return null
@@ -106,17 +129,7 @@ function readFileView(relPath: string) {
   if (!abs) return null
   try {
     const raw = readFileSync(abs, 'utf8')
-    const parsed = parseFile(relPath, raw)
-    const isMarkdown = relPath.toLowerCase().endsWith('.md')
-    return {
-      kind: isMarkdown ? ('markdown' as const) : ('text' as const),
-      path: relPath,
-      title: parsed.title,
-      tags: parsed.tags,
-      frontmatter: parsed.frontmatter,
-      body: parsed.body,
-      raw
-    }
+    return viewFromRaw(relPath, raw)
   } catch {
     return null
   }
@@ -252,6 +265,22 @@ export function registerIpc(): void {
   ipcMain.handle('links:forNote', (_event, relPath: unknown) => {
     if (typeof relPath !== 'string') return {}
     return resolveNoteLinks(relPath)
+  })
+  ipcMain.handle('history:list', (_event, relPath: unknown): SnapshotMeta[] => {
+    const index = requireIndex()
+    if (!index || typeof relPath !== 'string' || !relPath) return []
+    return queries.listSnapshots(index.getDb(), relPath)
+  })
+  ipcMain.handle('history:view', (_event, id: unknown): FileView | null => {
+    const index = requireIndex()
+    if (!index || typeof id !== 'number' || !Number.isInteger(id) || id <= 0) return null
+    const snapshot = queries.getSnapshot(index.getDb(), id)
+    if (!snapshot) return null
+    try {
+      return viewFromRaw(snapshot.relPath, snapshot.content)
+    } catch {
+      return null
+    }
   })
 }
 

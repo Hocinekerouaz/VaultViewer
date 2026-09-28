@@ -10,6 +10,7 @@ import type {
   RecentVault,
   SaveResult,
   SearchHit,
+  SnapshotMeta,
   VaultChange,
   VaultState
 } from '../shared/types'
@@ -46,6 +47,9 @@ const api = {
     ipcRenderer.invoke('links:outgoing', relPath),
   resolveNoteLinks: (relPath: string): Promise<LinkMap> =>
     ipcRenderer.invoke('links:forNote', relPath),
+  historyList: (relPath: string): Promise<SnapshotMeta[]> =>
+    ipcRenderer.invoke('history:list', relPath),
+  historyView: (id: number): Promise<FileView | null> => ipcRenderer.invoke('history:view', id),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   onIndexProgress: (callback: (payload: IndexProgress) => void): (() => void) =>
     subscribe('vault:progress', callback),
