@@ -1497,3 +1497,55 @@ a:focus-visible,
     grid-template-columns: 1fr;
   }
 }
+
+.link-preview {
+  position: fixed;
+  z-index: 50;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.link-preview-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.link-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-preview-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: auto;
+}
+
+.link-preview-body {
+  padding: 12px 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.link-preview-body .note-body > *:first-child {
+  margin-top: 0;
+}

@@ -46,6 +46,7 @@ export function RenderedBody({ view, linkMap, onWiki, onTag }: RenderedBodyProps
                   <a
                     href="#"
                     className={`wikilink ${isMissing ? 'wikilink-missing' : ''}`}
+                    data-wikilink={target}
                     onClick={(event) => {
                       event.preventDefault()
                       onWiki?.(target)
