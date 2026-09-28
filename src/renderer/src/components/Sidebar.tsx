@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type KeyboardEvent
 } from 'react'
-import { useStore } from '@/store'
+import { isDirty, useStore } from '@/store'
 import {
   ancestorsOf,
   buildTree,
@@ -297,6 +297,10 @@ export function Sidebar() {
   const openVaultPath = useStore((s) => s.openVaultPath)
   const openFolder = useStore((s) => s.openFolder)
   const showToast = useStore((s) => s.showToast)
+  const pinned = useStore((s) => s.pinned)
+  const togglePin = useStore((s) => s.togglePin)
+  const note = useStore((s) => s.note)
+  const draft = useStore((s) => s.draft)
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [creatingIn, setCreatingIn] = useState<string | null>(null)
@@ -580,6 +584,47 @@ export function Sidebar() {
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
+          {pinned.length > 0 && (
+            <div className="pins-rail">
+              {pinned.map((path) => {
+                const missing = !tree.includes(path)
+                const active = path === openPath
+                const dirty = active && isDirty({ draft, note })
+                const name = path.split('/').pop() ?? path
+                return (
+                  <div
+                    key={path}
+                    className={`pin-chip ${active ? 'active' : ''} ${missing ? 'missing' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="pin-chip-label"
+                      title={missing ? `${path} (missing)` : path}
+                      onClick={() => {
+                        if (missing) showToast('That file is no longer in the vault')
+                        else void openNote(path)
+                      }}
+                    >
+                      {name}
+                    </button>
+                    {dirty && (
+                      <span className="dirty-dot" title="Unsaved changes">
+                        ●
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="pin-chip-x"
+                      title="Unpin"
+                      onClick={() => togglePin(path)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div className="tree" ref={treeRef} onKeyDown={onKeyDown} onContextMenu={onTreeContextMenu}>
             {creatingIn === '' && (
               <InlineEdit
@@ -631,21 +676,33 @@ export function Sidebar() {
                       <span className="ctx-key">F2</span>
                     </button>
                     {menuNode.isFile && (
-                      <button
-                        type="button"
-                        className="ctx-item"
-                        onClick={() => {
-                          const text = root ? `${root}/${itemPath}` : itemPath
-                          void navigator.clipboard.writeText(text).then(
-                            () => showToast('Path copied'),
-                            () => showToast('Could not copy the path')
-                          )
-                          setMenu(null)
-                        }}
-                      >
-                        Copy path
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="ctx-item"
+                      onClick={() => {
+                        const text = root ? `${root}/${itemPath}` : itemPath
+                        void navigator.clipboard.writeText(text).then(
+                          () => showToast('Path copied'),
+                          () => showToast('Could not copy the path')
+                        )
+                        setMenu(null)
+                      }}
+                    >
+                      Copy path
+                    </button>
+                  )}
+                  {menuNode.isFile && (
+                    <button
+                      type="button"
+                      className="ctx-item"
+                      onClick={() => {
+                        togglePin(itemPath)
+                        setMenu(null)
+                      }}
+                    >
+                      {pinned.includes(itemPath) ? 'Unpin' : 'Pin'}
+                    </button>
+                  )}
                     <button
                       type="button"
                       className="ctx-item danger"

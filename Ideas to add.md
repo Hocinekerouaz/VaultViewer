@@ -3,7 +3,7 @@
 ## New suggested Features
 - [x] Local version history ("time machine")
 - [x] Hover preview popovers on wikilinks
-- [ ] Pins rail
+- [x] Pins rail
 - [ ] Copy button on code blocks
 
 ## New suggested upgrades

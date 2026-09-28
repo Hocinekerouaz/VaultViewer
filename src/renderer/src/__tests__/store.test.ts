@@ -33,6 +33,22 @@ const api = {
 
 ;(globalThis as unknown as { window: unknown }).window = { api }
 
+const localStore = new Map<string, string>()
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: (key: string) => localStore.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      localStore.set(key, value)
+    },
+    removeItem: (key: string) => {
+      localStore.delete(key)
+    },
+    clear: () => localStore.clear()
+  },
+  configurable: true,
+  writable: true
+})
+
 import { isDirty, useStore } from '@/store'
 
 const seedOpen = async (path: string, raw: string): Promise<void> => {
@@ -48,6 +64,7 @@ const enterDirtyEdit = async (raw: string, draft: string): Promise<void> => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStore.clear()
   api.getBacklinks.mockResolvedValue([])
   api.getOutgoing.mockResolvedValue([])
   api.resolveNoteLinks.mockResolvedValue({})
@@ -59,6 +76,7 @@ beforeEach(() => {
     root: '/vault',
     tree: ['a.md', 'b.md'],
     folders: [],
+    pinned: [],
     openPath: null,
     selectedPath: null,
     note: null,
@@ -455,5 +473,56 @@ describe('history', () => {
     await useStore.getState().restoreHistory()
     expect(useStore.getState().historyOpen).toBe(true)
     expect(useStore.getState().toast).toBe('Could not save the file')
+  })
+})
+
+describe('pins', () => {
+  it('toggles a pin and persists it for the vault', () => {
+    useStore.getState().togglePin('a.md')
+    expect(useStore.getState().pinned).toEqual(['a.md'])
+    expect(localStore.get('vv-pins:/vault')).toBe('["a.md"]')
+    useStore.getState().togglePin('b.md')
+    expect(useStore.getState().pinned).toEqual(['a.md', 'b.md'])
+    useStore.getState().togglePin('a.md')
+    expect(useStore.getState().pinned).toEqual(['b.md'])
+    expect(localStore.get('vv-pins:/vault')).toBe('["b.md"]')
+  })
+
+  it('skips persistence when no vault is open', () => {
+    useStore.setState({ root: null })
+    useStore.getState().togglePin('a.md')
+    expect(useStore.getState().pinned).toEqual(['a.md'])
+    expect([...localStore.keys()]).toEqual([])
+  })
+
+  it('remaps a pinned file on rename', async () => {
+    useStore.setState({ pinned: ['a.md'] })
+    api.renamePath.mockResolvedValue({ ok: true, path: 'renamed.md' })
+    await useStore.getState().renameItem('a.md', 'renamed.md')
+    expect(useStore.getState().pinned).toEqual(['renamed.md'])
+    expect(localStore.get('vv-pins:/vault')).toBe('["renamed.md"]')
+  })
+
+  it('remaps pins under a renamed folder', async () => {
+    useStore.setState({ pinned: ['a.md', 'sub/note.md'] })
+    api.renamePath.mockResolvedValue({ ok: true, path: 'moved' })
+    await useStore.getState().renameItem('sub', 'moved')
+    expect(useStore.getState().pinned).toEqual(['a.md', 'moved/note.md'])
+    expect(localStore.get('vv-pins:/vault')).toBe('["a.md","moved/note.md"]')
+  })
+
+  it('drops pins under a deleted folder and persists', async () => {
+    useStore.setState({ pinned: ['a.md', 'sub/note.md'] })
+    api.deletePath.mockResolvedValue({ ok: true, path: 'sub' })
+    await useStore.getState().deleteItem('sub')
+    expect(useStore.getState().pinned).toEqual(['a.md'])
+    expect(localStore.get('vv-pins:/vault')).toBe('["a.md"]')
+  })
+
+  it('keeps unrelated pins when a pinned file is deleted', async () => {
+    useStore.setState({ pinned: ['a.md', 'b.md'] })
+    api.deletePath.mockResolvedValue({ ok: true, path: 'a.md' })
+    await useStore.getState().deleteItem('a.md')
+    expect(useStore.getState().pinned).toEqual(['b.md'])
   })
 })

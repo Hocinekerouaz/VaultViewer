@@ -13,6 +13,8 @@ export function PaneToolbar() {
   const keepEditing = useStore((s) => s.keepEditing)
   const closeDeletedFile = useStore((s) => s.closeDeletedFile)
   const openHistory = useStore((s) => s.openHistory)
+  const pinned = useStore((s) => s.pinned)
+  const togglePin = useStore((s) => s.togglePin)
   const [confirmRevert, setConfirmRevert] = useState(false)
 
   useEffect(() => {
@@ -82,6 +84,14 @@ export function PaneToolbar() {
               </button>
             </>
           )}
+          <button
+            type="button"
+            className={`ghost-btn ${pinned.includes(note.path) ? 'pinned' : ''}`}
+            title={pinned.includes(note.path) ? 'Unpin from the rail' : 'Pin to the rail'}
+            onClick={() => togglePin(note.path)}
+          >
+            {pinned.includes(note.path) ? 'Unpin' : 'Pin'}
+          </button>
           <button
             type="button"
             className="ghost-btn"

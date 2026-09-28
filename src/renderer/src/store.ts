@@ -47,6 +47,7 @@ interface StoreState {
   pendingFind: string | null
   filter: string
   collapsed: Set<string>
+  pinned: string[]
   autoReveal: boolean
   revealTarget: string | null
   revealTick: number
@@ -66,6 +67,7 @@ interface StoreState {
   toggleFolder: (key: string) => void
   expandAll: () => void
   collapseAll: () => void
+  togglePin: (path: string) => void
   revealPath: (path: string) => void
   setAutoReveal: (value: boolean) => void
   createFolderAt: (parentRel: string, name: string) => Promise<string | null>
@@ -113,6 +115,26 @@ function loadCollapsed(root: string): Set<string> {
   return new Set()
 }
 
+function loadPins(root: string): string[] {
+  try {
+    const raw = localStorage.getItem(`vv-pins:${root}`)
+    if (!raw) return []
+    const list: unknown = JSON.parse(raw)
+    if (Array.isArray(list)) return list.filter((item): item is string => typeof item === 'string')
+  } catch {
+    void 0
+  }
+  return []
+}
+
+function savePins(root: string, pinned: string[]): void {
+  try {
+    localStorage.setItem(`vv-pins:${root}`, JSON.stringify(pinned))
+  } catch {
+    void 0
+  }
+}
+
 let initialized = false
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -131,6 +153,7 @@ export const useStore = create<StoreState>((set, get) => {
       pendingWiki: null,
       pendingFind: null,
       collapsed: loadCollapsed(result.root),
+      pinned: loadPins(result.root),
       revealTarget: null,
       viewMode: 'read',
       draft: null,
@@ -194,6 +217,7 @@ export const useStore = create<StoreState>((set, get) => {
     pendingFind: null,
     filter: '',
     collapsed: new Set<string>(),
+    pinned: [],
     autoReveal: true,
     revealTarget: null,
     revealTick: 0,
@@ -227,6 +251,12 @@ export const useStore = create<StoreState>((set, get) => {
       localStorage.setItem('vv-autoreveal', value ? '1' : '0')
       set({ autoReveal: value })
     },
+    togglePin: (path) => {
+      const { root, pinned } = get()
+      const next = pinned.includes(path) ? pinned.filter((item) => item !== path) : [...pinned, path]
+      if (root) savePins(root, next)
+      set({ pinned: next })
+    },
     createFolderAt: async (parentRel, name) => {
       const res = await window.api.createFolder(parentRel, name)
       if (!res.ok) {
@@ -251,13 +281,16 @@ export const useStore = create<StoreState>((set, get) => {
         if (value && value.startsWith(`${relPath}/`)) return newPath + value.slice(relPath.length)
         return value
       }
-      const { tree, folders, openPath, selectedPath, collapsed } = get()
+      const { tree, folders, openPath, selectedPath, collapsed, pinned, root } = get()
+      const nextPinned = pinned.map((item) => shift(item) ?? item)
       set({
         tree: tree.map((path) => shift(path) ?? path),
         folders: folders.map((path) => shift(path) ?? path),
         collapsed: remapCollapsed(collapsed, relPath, newPath),
+        pinned: nextPinned,
         selectedPath: shift(selectedPath)
       })
+      if (root && nextPinned.some((item, index) => item !== pinned[index])) savePins(root, nextPinned)
       const nextOpen = shift(openPath)
       if (nextOpen && nextOpen !== openPath) {
         const current = get().note
@@ -274,13 +307,15 @@ export const useStore = create<StoreState>((set, get) => {
       }
       const under = (value: string | null): boolean =>
         value === relPath || (!!value && value.startsWith(`${relPath}/`))
-      const { tree, folders, openPath, selectedPath, collapsed } = get()
+      const { tree, folders, openPath, selectedPath, collapsed, pinned, root } = get()
+      const nextPinned = pinned.filter((item) => !under(item))
       set({
         tree: tree.filter((path) => !under(path)),
         folders: folders.filter((path) => !under(path)),
         collapsed: new Set(
           [...collapsed].filter((key) => key !== relPath && !key.startsWith(`${relPath}/`))
         ),
+        pinned: nextPinned,
         selectedPath: under(selectedPath) ? null : selectedPath,
         ...(under(openPath)
           ? {
@@ -298,6 +333,7 @@ export const useStore = create<StoreState>((set, get) => {
             }
           : {})
       })
+      if (root && nextPinned.length !== pinned.length) savePins(root, nextPinned)
       get().showToast('Moved to the Recycle Bin')
       return true
     },
@@ -339,7 +375,8 @@ export const useStore = create<StoreState>((set, get) => {
           root: state.root,
           tree,
           folders,
-          collapsed: loadCollapsed(state.root)
+          collapsed: loadCollapsed(state.root),
+          pinned: loadPins(state.root)
         })
         const first = firstMarkdown(tree)
         if (first) await get().openNote(first)

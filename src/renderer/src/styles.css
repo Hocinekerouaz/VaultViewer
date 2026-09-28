@@ -1549,3 +1549,86 @@ a:focus-visible,
 .link-preview-body .note-body > *:first-child {
   margin-top: 0;
 }
+
+.pins-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 1px 4px;
+  max-height: 92px;
+  overflow-y: auto;
+  flex: 0 0 auto;
+}
+
+.pin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  border-radius: 7px;
+  padding: 2px 3px 2px 8px;
+  font-size: 11.5px;
+}
+
+.pin-chip:hover {
+  border-color: var(--accent);
+}
+
+.pin-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.pin-chip.missing {
+  opacity: 0.6;
+}
+
+.pin-chip-label {
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 2px 0;
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin-chip.active .pin-chip-label {
+  color: var(--link);
+  font-weight: 600;
+}
+
+.pin-chip-x {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.pin-chip-x:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.pin-chip .dirty-dot {
+  font-size: 9px;
+}
+
+.ghost-btn.pinned {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
