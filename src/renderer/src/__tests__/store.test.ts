@@ -14,6 +14,8 @@ const makeView = (path: string, raw: string): FileView => ({
 const api = {
   readFile: vi.fn(),
   writeFile: vi.fn(),
+  renamePath: vi.fn(),
+  deletePath: vi.fn(),
   getBacklinks: vi.fn(),
   getOutgoing: vi.fn(),
   resolveNoteLinks: vi.fn(),
@@ -215,6 +217,18 @@ describe('saveDraft', () => {
     expect(saved).toBe(false)
     expect(api.writeFile).not.toHaveBeenCalled()
   })
+
+  it('stays in edit with the draft when the saved file cannot be read back', async () => {
+    await enterDirtyEdit('# a', '# a\nedits')
+    api.writeFile.mockResolvedValue({ ok: false, error: 'Could not read the saved file' })
+    const saved = await useStore.getState().saveDraft()
+    expect(saved).toBe(false)
+    expect(useStore.getState().viewMode).toBe('edit')
+    expect(useStore.getState().draft).toBe('# a\nedits')
+    expect(useStore.getState().note?.raw).toBe('# a')
+    expect(isDirty(useStore.getState())).toBe(true)
+    expect(useStore.getState().toast).toBe('Could not read the saved file')
+  })
 })
 
 describe('revertDraft', () => {
@@ -269,6 +283,31 @@ describe('handleChanged', () => {
     useStore.setState({ root: null })
     await useStore.getState().handleChanged()
     expect(api.getTree).not.toHaveBeenCalled()
+  })
+})
+
+describe('rename while dirty', () => {
+  it('keeps the draft and updates the open path in place', async () => {
+    await enterDirtyEdit('# a', '# a\nedits')
+    api.renamePath.mockResolvedValue({ ok: true, path: 'renamed.md' })
+    const result = await useStore.getState().renameItem('a.md', 'renamed.md')
+    expect(result).toBe('renamed.md')
+    const state = useStore.getState()
+    expect(state.openPath).toBe('renamed.md')
+    expect(state.note?.path).toBe('renamed.md')
+    expect(state.note?.raw).toBe('# a')
+    expect(state.draft).toBe('# a\nedits')
+    expect(state.pendingSwitch).toBeNull()
+    expect(state.viewMode).toBe('edit')
+    expect(isDirty(state)).toBe(true)
+    expect(state.tree).toContain('renamed.md')
+  })
+
+  it('defers a rename of a closed file without prompting', async () => {
+    api.renamePath.mockResolvedValue({ ok: true, path: 'renamed.md' })
+    const result = await useStore.getState().renameItem('b.md', 'renamed.md')
+    expect(result).toBe('renamed.md')
+    expect(useStore.getState().pendingSwitch).toBeNull()
   })
 })
 
