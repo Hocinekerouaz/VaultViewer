@@ -1,4 +1,5 @@
 import { useStore } from '@/store'
+import { useDialogFocus } from '@/lib/modalFocus'
 import { RenderedBody } from './RenderedBody'
 
 function formatWhen(createdAt: number): string {
@@ -17,6 +18,7 @@ export function AmbiguityPicker() {
   const pendingWiki = useStore((s) => s.pendingWiki)
   const dismissWiki = useStore((s) => s.dismissWiki)
   const openNote = useStore((s) => s.openNote)
+  const { modalRef, onModalKeyDown } = useDialogFocus(pendingWiki !== null)
 
   if (!pendingWiki) return null
 
@@ -30,11 +32,14 @@ export function AmbiguityPicker() {
       role="presentation"
     >
       <div
+        ref={modalRef}
         className="modal"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={onModalKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Choose a note"
+        tabIndex={-1}
       >
         <div className="modal-title">
           Multiple notes match <code>[[{pendingWiki.target}]]</code>
@@ -67,6 +72,7 @@ export function SwitchModal() {
   const pending = useStore((s) => s.pendingSwitch)
   const openPath = useStore((s) => s.openPath)
   const resolveSwitch = useStore((s) => s.resolveSwitch)
+  const { modalRef, onModalKeyDown } = useDialogFocus(pending !== null)
 
   if (!pending) return null
   const name = (openPath ?? '').split('/').pop() ?? openPath ?? ''
@@ -81,11 +87,14 @@ export function SwitchModal() {
       role="presentation"
     >
       <div
+        ref={modalRef}
         className="modal"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={onModalKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Unsaved changes"
+        tabIndex={-1}
       >
         <div className="modal-title">
           Save changes to <code>{name}</code> first?
@@ -115,6 +124,7 @@ export function ExternalOpenModal() {
   const external = useStore((s) => s.externalOpen)
   const confirmExternalOpen = useStore((s) => s.confirmExternalOpen)
   const cancelExternalOpen = useStore((s) => s.cancelExternalOpen)
+  const { modalRef, onModalKeyDown } = useDialogFocus(external !== null)
 
   if (!external) return null
   const parts = external.absPath.split(/[\\/]/)
@@ -131,11 +141,14 @@ export function ExternalOpenModal() {
       role="presentation"
     >
       <div
+        ref={modalRef}
         className="modal"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={onModalKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Open file"
+        tabIndex={-1}
       >
         <div className="modal-title">
           Open <code>{name}</code>?
@@ -181,6 +194,7 @@ export function HistoryOverlay() {
   const closeHistory = useStore((s) => s.closeHistory)
   const selectHistory = useStore((s) => s.selectHistory)
   const restoreHistory = useStore((s) => s.restoreHistory)
+  const { modalRef, onModalKeyDown } = useDialogFocus(open)
 
   if (!open) return null
   const name = (openPath ?? '').split('/').pop() ?? openPath ?? ''
@@ -199,11 +213,14 @@ export function HistoryOverlay() {
       role="presentation"
     >
       <div
+        ref={modalRef}
         className="modal history-modal"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={onModalKeyDown}
         role="dialog"
         aria-modal="true"
         aria-label="Version history"
+        tabIndex={-1}
       >
         <div className="modal-title">
           Version history for <code>{name}</code>

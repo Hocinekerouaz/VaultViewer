@@ -11,7 +11,6 @@ import { useStore } from '@/store'
 
 export default function App() {
   const init = useStore((s) => s.init)
-  const openVaultPath = useStore((s) => s.openVaultPath)
   const openNote = useStore((s) => s.openNote)
   const searchOpen = useStore((s) => s.searchOpen)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
@@ -39,7 +38,16 @@ export default function App() {
       if (!file) return
       try {
         const path = window.api.pathForFile(file)
-        if (path) void openVaultPath(path)
+        if (!path) return
+        void (async () => {
+          const opened = await window.api.openVaultPath(path)
+          if (opened) return
+          if (/\.[a-z0-9]+$/i.test(path)) {
+            void useStore.getState().openExternalFile(path)
+          } else {
+            useStore.getState().showToast('Could not open that folder')
+          }
+        })()
       } catch {
         useStore.getState().showToast('Could not read the dropped folder')
       }
@@ -57,7 +65,7 @@ export default function App() {
       window.removeEventListener('drop', onDrop)
       window.removeEventListener('mousedown', onPointerDown)
     }
-  }, [openVaultPath, searchOpen, setSearchOpen])
+  }, [searchOpen, setSearchOpen])
 
   const isNoteDrag = (event: { dataTransfer: DataTransfer }): boolean =>
     isInternalNoteDrag([...event.dataTransfer.types])

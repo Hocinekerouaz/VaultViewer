@@ -8,6 +8,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
+    "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "postinstall": "electron-rebuild -f -w better-sqlite3"

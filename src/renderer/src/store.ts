@@ -253,12 +253,19 @@ export const useStore = create<StoreState>((set, get) => {
   }
 
   const doOpen = async (relPath: string, findTerm?: string | null): Promise<void> => {
-    const [note, backlinks, outgoing, linkMap] = await Promise.all([
-      window.api.readFile(relPath),
-      window.api.getBacklinks(relPath),
-      window.api.getOutgoing(relPath),
-      window.api.resolveNoteLinks(relPath)
-    ])
+    let loaded: [FileView | null, BacklinkItem[], OutgoingItem[], LinkMap]
+    try {
+      loaded = await Promise.all([
+        window.api.readFile(relPath),
+        window.api.getBacklinks(relPath),
+        window.api.getOutgoing(relPath),
+        window.api.resolveNoteLinks(relPath)
+      ])
+    } catch {
+      get().showToast(`Could not read ${relPath}`)
+      return
+    }
+    const [note, backlinks, outgoing, linkMap] = loaded
     if (!note) {
       get().showToast(`Could not read ${relPath}`)
       return
@@ -467,26 +474,34 @@ export const useStore = create<StoreState>((set, get) => {
       })
       window.api.onVaultOpened((result) => {
         void (async () => {
-          await applyVault(result)
-          await get().drainPendingExternal()
+          try {
+            await applyVault(result)
+            await get().drainPendingExternal()
+          } catch {
+            get().showToast('Could not open that vault')
+          }
         })()
       })
       window.api.onOpenFile((absPath) => {
         void get().openExternalFile(absPath)
       })
 
-      const state = await window.api.getVaultState()
-      if (state.root) {
-        const { tree, folders } = await window.api.getTree()
-        set({
-          root: state.root,
-          tree,
-          folders,
-          collapsed: loadCollapsed(state.root),
-          pinned: loadPins(state.root)
-        })
-        const first = firstMarkdown(tree)
-        if (first) await get().openNote(first)
+      const state = await window.api.getVaultState().catch(() => null)
+      if (state?.root) {
+        try {
+          const { tree, folders } = await window.api.getTree()
+          set({
+            root: state.root,
+            tree,
+            folders,
+            collapsed: loadCollapsed(state.root),
+            pinned: loadPins(state.root)
+          })
+          const first = firstMarkdown(tree)
+          if (first) await get().openNote(first)
+        } catch {
+          return
+        }
       }
     },
 
@@ -500,8 +515,7 @@ export const useStore = create<StoreState>((set, get) => {
     },
 
     openFolder: async () => {
-      const result = await window.api.openFolder()
-      if (!result) return
+      await window.api.openFolder()
     },
 
     openExternalFile: async (absPath) => {
@@ -683,21 +697,29 @@ export const useStore = create<StoreState>((set, get) => {
     refreshNoteMeta: async () => {
       const { openPath } = get()
       if (!openPath) return
-      const [backlinks, outgoing, linkMap] = await Promise.all([
-        window.api.getBacklinks(openPath),
-        window.api.getOutgoing(openPath),
-        window.api.resolveNoteLinks(openPath)
-      ])
-      set({ backlinks, outgoing, linkMap })
+      try {
+        const [backlinks, outgoing, linkMap] = await Promise.all([
+          window.api.getBacklinks(openPath),
+          window.api.getOutgoing(openPath),
+          window.api.resolveNoteLinks(openPath)
+        ])
+        set({ backlinks, outgoing, linkMap })
+      } catch {
+        return
+      }
     },
 
     handleChanged: async () => {
       if (!get().root) return
-      const { tree, folders } = await window.api.getTree()
-      set({ tree, folders })
+      try {
+        const { tree, folders } = await window.api.getTree()
+        set({ tree, folders })
+      } catch {
+        return
+      }
       const { openPath } = get()
       if (openPath) {
-        const note = await window.api.readFile(openPath)
+        const note = await window.api.readFile(openPath).catch(() => null)
         if (note) {
           const draft = get().draft
           if (draft !== null) {
@@ -726,18 +748,22 @@ export const useStore = create<StoreState>((set, get) => {
 
     runSearch: async () => {
       const { query, tagFilter, scope, openPath } = get()
-      if (tagFilter) {
-        const hits = await window.api.searchTag(tagFilter)
+      try {
+        if (tagFilter) {
+          const hits = await window.api.searchTag(tagFilter)
+          set({ hits: applyScope(hits, scope, openPath), searchOpen: true, hitCursor: 0 })
+          return
+        }
+        const trimmed = query.trim()
+        if (!trimmed) {
+          set({ hits: [], hitCursor: 0 })
+          return
+        }
+        const hits = await window.api.search(trimmed)
         set({ hits: applyScope(hits, scope, openPath), searchOpen: true, hitCursor: 0 })
+      } catch {
         return
       }
-      const trimmed = query.trim()
-      if (!trimmed) {
-        set({ hits: [], hitCursor: 0 })
-        return
-      }
-      const hits = await window.api.search(trimmed)
-      set({ hits: applyScope(hits, scope, openPath), searchOpen: true, hitCursor: 0 })
     },
 
     clearSearch: () =>

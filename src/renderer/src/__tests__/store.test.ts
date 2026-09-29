@@ -743,3 +743,43 @@ describe('external file open', () => {
     expect(api.readFile).not.toHaveBeenCalled()
   })
 })
+
+describe('error-path hardening', () => {
+  it('handleChanged keeps state when getTree fails', async () => {
+    api.getTree.mockRejectedValue(new Error('disk error'))
+    useStore.setState({ tree: ['a.md'], folders: [] })
+    await expect(useStore.getState().handleChanged()).resolves.toBeUndefined()
+    expect(useStore.getState().tree).toEqual(['a.md'])
+  })
+
+  it('runSearch keeps existing hits when the search fails', async () => {
+    const hits = [{ path: 'a.md' }] as unknown as ReturnType<typeof Object>[]
+    useStore.setState({ query: 'x', hits: hits as never })
+    api.search.mockRejectedValue(new Error('db error'))
+    await expect(useStore.getState().runSearch()).resolves.toBeUndefined()
+    expect(useStore.getState().hits).toEqual(hits)
+  })
+
+  it('refreshNoteMeta keeps backlinks when link lookup fails', async () => {
+    const backlinks = [{ relPath: 'b.md' }] as never[]
+    useStore.setState({ openPath: 'a.md', backlinks, outgoing: [], linkMap: {} })
+    api.getBacklinks.mockRejectedValue(new Error('db error'))
+    await expect(useStore.getState().refreshNoteMeta()).resolves.toBeUndefined()
+    expect(useStore.getState().backlinks).toEqual(backlinks)
+  })
+
+  it('openNote toasts when readFile rejects', async () => {
+    api.readFile.mockRejectedValue(new Error('vanished'))
+    await useStore.getState().openNote('a.md')
+    expect(useStore.getState().toast).toBe('Could not read a.md')
+    expect(useStore.getState().openPath).toBeNull()
+  })
+
+  it('openNote toasts when link lookup rejects', async () => {
+    api.readFile.mockResolvedValue(makeView('a.md', '# a'))
+    api.resolveNoteLinks.mockRejectedValue(new Error('scan failed'))
+    await useStore.getState().openNote('a.md')
+    expect(useStore.getState().toast).toBe('Could not read a.md')
+    expect(useStore.getState().openPath).toBeNull()
+  })
+})

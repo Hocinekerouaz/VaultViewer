@@ -1,4 +1,5 @@
 import { dialog, ipcMain, shell } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type {
@@ -197,14 +198,28 @@ async function deleteItem(relPath: unknown): Promise<OpResult> {
   }
 }
 
+function handleSafe<T>(
+  channel: string,
+  fallback: T | (() => T),
+  handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => T | Promise<T>
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    try {
+      return await handler(event, ...args)
+    } catch {
+      return typeof fallback === 'function' ? (fallback as () => T)() : fallback
+    }
+  })
+}
+
 export function registerIpc(): void {
-  ipcMain.handle('vault:openDialog', () => openVaultDialog())
-  ipcMain.handle('vault:openPath', (_event, path: unknown) => {
+  handleSafe('vault:openDialog', () => null, () => openVaultDialog())
+  handleSafe('vault:openPath', () => null, (_event, path) => {
     if (typeof path !== 'string' || !path) return null
     return openVault(path)
   })
   ipcMain.handle('vault:recent', (): RecentVault[] => loadRecent(appState.userData))
-  ipcMain.handle('vault:tree', async () => {
+  handleSafe('vault:tree', () => ({ tree: [], folders: [] }), async () => {
     if (!appState.root) return { tree: [], folders: [] }
     const { files, folders } = await scanVault(appState.root)
     return { tree: files, folders }
@@ -260,49 +275,45 @@ export function registerIpc(): void {
     if (!view) return { ok: false, error: 'Could not read the saved file' }
     return { ok: true, path: relPath, view }
   })
-  ipcMain.handle('search:query', (_event, query: unknown) => {
+  handleSafe('search:query', () => [], (_event, query) => {
     const index = requireIndex()
     if (!index || typeof query !== 'string') return []
     return queries.searchNotes(index.getDb(), query)
   })
-  ipcMain.handle('search:tag', (_event, tag: unknown) => {
+  handleSafe('search:tag', () => [], (_event, tag) => {
     const index = requireIndex()
     if (!index || typeof tag !== 'string') return []
     return queries.searchByTag(index.getDb(), tag)
   })
-  ipcMain.handle('links:backlinks', (_event, relPath: unknown) => {
+  handleSafe('links:backlinks', () => [], (_event, relPath) => {
     const index = requireIndex()
     if (!index || typeof relPath !== 'string') return []
     const noteId = queries.getNoteIdByPath(index.getDb(), relPath)
     if (noteId === null) return []
     return queries.getBacklinks(index.getDb(), noteId)
   })
-  ipcMain.handle('links:outgoing', (_event, relPath: unknown) => {
+  handleSafe('links:outgoing', () => [], (_event, relPath) => {
     const index = requireIndex()
     if (!index || typeof relPath !== 'string') return []
     const noteId = queries.getNoteIdByPath(index.getDb(), relPath)
     if (noteId === null) return []
     return queries.getOutgoing(index.getDb(), noteId)
   })
-  ipcMain.handle('links:forNote', (_event, relPath: unknown) => {
+  handleSafe('links:forNote', () => ({}), (_event, relPath) => {
     if (typeof relPath !== 'string') return {}
     return resolveNoteLinks(relPath)
   })
-  ipcMain.handle('history:list', (_event, relPath: unknown): SnapshotMeta[] => {
+  handleSafe('history:list', () => [], (_event, relPath): SnapshotMeta[] => {
     const index = requireIndex()
     if (!index || typeof relPath !== 'string' || !relPath) return []
     return queries.listSnapshots(index.getDb(), relPath)
   })
-  ipcMain.handle('history:view', (_event, id: unknown): FileView | null => {
+  handleSafe('history:view', () => null, (_event, id): FileView | null => {
     const index = requireIndex()
     if (!index || typeof id !== 'number' || !Number.isInteger(id) || id <= 0) return null
     const snapshot = queries.getSnapshot(index.getDb(), id)
     if (!snapshot) return null
-    try {
-      return viewFromRaw(snapshot.relPath, snapshot.content)
-    } catch {
-      return null
-    }
+    return viewFromRaw(snapshot.relPath, snapshot.content)
   })
 }
 

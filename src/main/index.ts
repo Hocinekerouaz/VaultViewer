@@ -73,6 +73,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 560,
     backgroundColor: '#f7f4ee',
+    icon: join(mainDir, '../../assets/icon.ico'),
     show: false,
     webPreferences: {
       preload: resolvePreload(),
